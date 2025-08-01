@@ -6,7 +6,7 @@ export default defineConfig({
   modules: ['@wxt-dev/module-react'],
   srcDir: 'src',
   manifest: {
-    permissions: ['storage', 'contextMenus', 'notifications'],
+    permissions: ['storage', 'contextMenus', 'notifications', 'activeTab'],
   },
   postcss: (config) => {
     config.plugins.unshift(postcssSimpleVars());

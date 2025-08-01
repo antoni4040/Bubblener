@@ -4,15 +4,74 @@ import { useState, useEffect } from 'react';
 import { MantineProvider } from '@mantine/core';
 import '@mantine/core/styles.css';
 import { Entity } from '@/utils/Entity';
+import { Loader, ActionIcon, Image } from '@mantine/core';
+import { IconX, IconRefresh } from '@tabler/icons-react';
+import BubblesIcon from '@/assets/icon.svg';
+import CustomCircularButton from '@/components/CustomCircularButton/CustomCircularButton';
 
 // Main App Component
 const EntityBubblesApp = () => {
   const [entities, setEntities] = useState([]);
   const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isVisible, setIsVisible] = useState(true);
   const [error, setError] = useState(null);
   const [scrollThreshold, setScrollThreshold] = useState(500);
+  const [isLoading, setLoading] = useState(false);
+  const [showBubbles, setShowBubbles] = useState(true);
+
+  // Function to get visible text on screen
+  const getVisibleTextOnScreen = () => {
+    if (!showBubbles) {
+      return '';
+    }
+
+    const allTextElements = Array.from(
+      document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, a, span, td')
+    );
+    let visibleText = '';
+
+    allTextElements.forEach(element => {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+
+      const isVisible = (
+        style.visibility !== 'hidden' &&
+        style.display !== 'none' &&
+        rect.top < window.innerHeight &&
+        rect.bottom >= 0 &&
+        rect.left < window.innerWidth &&
+        rect.right >= 0
+      );
+
+      if (isVisible) {
+        visibleText += (element as HTMLElement).innerText + '\n';
+      }
+    });
+
+    return visibleText;
+  };
+
+  // Send text to background script for processing
+  const processText = (text: string) => {
+    if (!showBubbles) {
+      return;
+    }
+
+    const maxTextLength = 16000;
+    if (text.length > maxTextLength) {
+      text = text.substring(0, maxTextLength);
+      console.log(`Text truncated to ${maxTextLength} characters.`);
+    }
+
+    setLoading(true);
+    browser.runtime.sendMessage({ text })
+      .then(response => {
+        if (response && response.status === "processing") {
+          console.log("Message sent to background script for processing.");
+        }
+      })
+      .catch(error => console.error("Error sending message to background script:", error));
+  };
 
   useEffect(() => {
     // Load scroll threshold on component mount
@@ -29,51 +88,6 @@ const EntityBubblesApp = () => {
 
     loadScrollThreshold();
 
-    // Function to get visible text on screen
-    const getVisibleTextOnScreen = () => {
-      const allTextElements = Array.from(
-        document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, a, span, td')
-      );
-      let visibleText = '';
-
-      allTextElements.forEach(element => {
-        const rect = element.getBoundingClientRect();
-        const style = window.getComputedStyle(element);
-
-        const isVisible = (
-          style.visibility !== 'hidden' &&
-          style.display !== 'none' &&
-          rect.top < window.innerHeight &&
-          rect.bottom >= 0 &&
-          rect.left < window.innerWidth &&
-          rect.right >= 0
-        );
-
-        if (isVisible) {
-          visibleText += (element as HTMLElement).innerText + '\n';
-        }
-      });
-
-      return visibleText;
-    };
-
-    // Send text to background script for processing
-    const processText = (text: string) => {
-      const maxTextLength = 16000;
-      if (text.length > maxTextLength) {
-        text = text.substring(0, maxTextLength);
-        console.log(`Text truncated to ${maxTextLength} characters.`);
-      }
-
-      browser.runtime.sendMessage({ text })
-        .then(response => {
-          if (response && response.status === "processing") {
-            console.log("Message sent to background script for processing.");
-          }
-        })
-        .catch(error => console.error("Error sending message to background script:", error));
-    };
-
     // Initial text extraction
     const initialText = getVisibleTextOnScreen();
     processText(initialText);
@@ -87,18 +101,16 @@ const EntityBubblesApp = () => {
       if (request.entities) {
         setEntities(request.entities.nodes || []);
         setError(null); // Clear any previous errors
+        setLoading(false);
       }
       if (request.error) {
         setError(request.error);
         // Auto-hide error after 10 seconds
         setTimeout(() => setError(null), 10000);
       }
-      if (request.action === "toggleBubbles") {
-        setIsVisible(prev => !prev);
-      }
     };
 
-    chrome.runtime.onMessage.addListener(messageListener);
+    browser.runtime.onMessage.addListener(messageListener);
 
     // Scroll listener with debouncing
     let lastScrollY = window.scrollY;
@@ -121,11 +133,17 @@ const EntityBubblesApp = () => {
 
     // Cleanup
     return () => {
-      chrome.runtime.onMessage.removeListener(messageListener);
+      browser.runtime.onMessage.removeListener(messageListener);
       window.removeEventListener('scroll', handleScroll);
       if (scrollTimeout) clearTimeout(scrollTimeout);
     };
   }, []);
+
+  const onReload = () => {
+    console.log("Reloading entity bubbles...");
+    const newText = getVisibleTextOnScreen();
+    processText(newText);
+  }
 
   const handleEntityClick = (entity: Entity) => {
     setSelectedEntity(entity);
@@ -141,11 +159,9 @@ const EntityBubblesApp = () => {
     setError(null);
   };
 
-  if (!isVisible) return null;
-
   return (
     <>
-      <div id="entity-bubbles-container" style={{ display: isVisible ? 'flex' : 'none' }}>
+      {showBubbles && <div id="entity-bubbles-container" style={{ display: !isLoading ? 'flex' : 'none' }}>
         {entities.map((entity, index) => (
           <EntityBubble
             key={index}
@@ -153,6 +169,62 @@ const EntityBubblesApp = () => {
             onEntityClick={handleEntityClick}
           />
         ))}
+        <div>
+          <ActionIcon
+            color='grey'
+            size="lg"
+            aria-label="Reload bubbles"
+            style={{ borderRadius: '50%', marginRight: '8px', marginLeft: 'auto' }}
+            onClick={() => onReload()}
+          >
+            <IconRefresh />
+          </ActionIcon>
+
+          <ActionIcon
+            color='red'
+            size="lg"
+            aria-label="Hide bubbles"
+            onClick={() => setShowBubbles(false)}
+            style={{ borderRadius: '50%' }}
+          >
+            <IconX />
+          </ActionIcon>
+        </div>
+      </div>}
+
+      {!showBubbles && (
+        <div style={{
+          position: 'fixed',
+          top: '20px',
+          right: '20px',
+          zIndex: 1000
+        }}>
+          <CustomCircularButton
+            onClick={() => setShowBubbles(true)}
+            aria-label="Show bubbles"
+          >
+            <img src={BubblesIcon} alt="" />
+          </CustomCircularButton>
+        </div>
+      )}
+
+      <div style={{
+        position: 'fixed',
+        top: '20px',
+        right: '20px',
+        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+        padding: '12px 16px',
+        borderRadius: '8px',
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+        display: isLoading ? 'flex' : 'none',
+        alignItems: 'center',
+        gap: '8px',
+        zIndex: 1000,
+        fontSize: '14px',
+        color: '#333'
+      }}>
+        <Loader size="sm" />
+        <span>Processing entities...</span>
       </div>
 
       <EntityModal
@@ -171,6 +243,7 @@ const EntityBubblesApp = () => {
 
 export default defineContentScript({
   matches: ['*://*/*'],
+  registration: 'runtime',
   cssInjectionMode: 'ui',
   async main(ctx) {
     // Create shadow root UI
