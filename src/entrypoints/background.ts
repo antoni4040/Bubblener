@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 
 export default defineBackground(() => {
   // Track which tabs have the extension activated
@@ -106,34 +106,42 @@ Identify the most significant entities in the provided text (e.g., articles, boo
     * **Description**: The description field must be a *single, concise sentence* that defines the entity's primary identity or role as presented in the text.
     * **Summary**: The summary_from_text field must be a *3-4 sentence paragraph* that synthesizes all mentions of the entity to explain its broader activities, relationships, and significance *within the context of the document*.
     * **Enrichment**: The contextual_enrichment field should contain supplementary facts from your general knowledge. If the entity is fictional or you have no external knowledge, this value must be null.
-4.  **Entity Categorization**: Classify each entity into one of the following types: **Person**, **Organization**, **Location**, or **Key Concept/Theme** (e.g., "Quantum Entanglement", "Neoclassical Economics", "Character Arc").
-
-# OUTPUT FORMAT:
-- Your output must be ONLY a valid JSON array of objects.
-- Do not add any introductory text, closing remarks, or markdown json tags.
-- If no significant entities are found, return an empty JSON array: [].
-
-## JSON Schema:
-[
-  {
-    "entity_name": "The full, canonical name of the entity.",
-    "entity_type": "One of: Person, Organization, Location, Key Concept/Theme.",
-    "description": "A single, concise sentence defining the entity's primary role in the text.",
-    "summary_from_text": "A 3-4 sentence summary synthesizing the entity's significance, based exclusively on the provided text.",
-    "contextual_enrichment": "Brief, supplementary facts from general knowledge (e.g., a person's profession, an organization's industry). Must be null if no external information is found."
-  }
-]
-
-# TEXT TO ANALYZE:
-${request.text}`
+4.  **Entity Categorization**: Classify each entity into one of the following types: **Person**, **Organization**, **Location**, or **Key Concept/Theme** (e.g., "Quantum Entanglement", "Neoclassical Economics", "Character Arc").`
 
     try {
       const response = await genAI.models.generateContent({
         model: "gemini-2.5-flash-lite",
-        contents: prompt,
+        contents: request.text,
         config: {
           thinkingConfig: {
             thinkingBudget: 0, // Disables thinking
+          },
+          systemInstruction: prompt,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                entity_name: {
+                  type: Type.STRING,
+                },
+                entity_type: {
+                  type: Type.STRING,
+                  enum: ['Person', 'Organization', 'Location', 'Key Concept/Theme'],
+                },
+                description: {
+                  type: Type.STRING,
+                },
+                summary_from_text: {
+                  type: Type.STRING,
+                },
+                contextual_enrichment: {
+                  type: Type.STRING,
+                },
+              },
+              propertyOrdering: ["entity_name", "entity_type", "description", "summary_from_text", "contextual_enrichment"],
+            },
           },
         }
       });

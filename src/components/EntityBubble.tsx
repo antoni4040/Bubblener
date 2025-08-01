@@ -8,17 +8,33 @@ interface EntityBubbleProps {
 }
 
 export const EntityBubble = ({ entity, onEntityClick }: EntityBubbleProps) => {
-    // 1. Manage the popover's opened/closed state
     const [opened, { close, open }] = useDisclosure(false);
+    
+    // Define bold gradients for each entity type
+    const getEntityGradient = (entityType: string) => {
+        switch (entityType) {
+            case 'Person':
+                return "linear-gradient(135deg, #e73c7e 0%, #23a6d5 100%)"; // Magenta to blue
+            case 'Organization':
+                return "linear-gradient(135deg, #11998e 0%, #38ef7d 100%)"; // Dark teal to green
+            case 'Location':
+                return "linear-gradient(135deg, #f12711 0%, #f5af19 100%)"; // Red to orange
+            case 'Key Concept/Theme':
+                return "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"; // Your original gradient
+            default:
+                return "linear-gradient(135deg, #8360c3 0%, #2ebf91 100%)"; // Purple to teal fallback
+        }
+    };
 
     return (
-        // 2. Pass the `opened` state to the Popover component
         <Popover width={200} position="bottom" withArrow shadow="md" opened={opened} withinPortal={false}>
             <Popover.Target>
                 <div
                     className="entity-bubble"
-                    style={{ background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)" }}
-                    // 3. Open on mouse enter and close on mouse leave
+                    style={{ 
+                        background: getEntityGradient(entity.entity_type),
+                        color: 'white' // Ensure white text
+                    }}
                     onMouseEnter={open}
                     onMouseLeave={close}
                     onClick={() => onEntityClick(entity)}
@@ -26,7 +42,6 @@ export const EntityBubble = ({ entity, onEntityClick }: EntityBubbleProps) => {
                     {entity.entity_name}
                 </div>
             </Popover.Target>
-            {/* 4. Prevent the dropdown from stealing mouse events */}
             <Popover.Dropdown style={{ pointerEvents: 'none' }}>
                 <Text size="sm">{entity.description}</Text>
             </Popover.Dropdown>
