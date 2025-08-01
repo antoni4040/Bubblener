@@ -2,12 +2,9 @@ import { useState, useEffect } from 'react';
 import { PasswordInput, Container, Title, Input, Stack, NumberInput, Button, Group, Text, Image, ColorInput } from '@mantine/core';
 import bubblenerLogo from '/icon-128.png';
 import './App.css';
-import { storage } from '#imports';
 import { geminiApiKey } from '../../utils/geminiApiKey';
 import { pixelDistance } from '../../utils/pixelDistance';
 import { maxNumberOfElements } from '../../utils/maxNumberOfElements';
-import { colorA } from '../../utils/colorA';
-import { colorB } from '../../utils/colorB';
 
 function App() {
   // 2. Use standard useState for component state management.
@@ -15,8 +12,6 @@ function App() {
   const [pixels, setPixels] = useState(100);
   const [status, setStatus] = useState('');
   const [maxElements, setMaxElements] = useState(12);
-  const [colorAValue, setColorAValue] = useState('#667eea');
-  const [colorBValue, setColorBValue] = useState('#764ba2');
 
   // 3. Use useEffect to load data from storage when the component mounts.
   useEffect(() => {
@@ -25,16 +20,12 @@ function App() {
       const savedApiKey = await geminiApiKey.getValue();
       const savedPixels = await pixelDistance.getValue();
       const savedMaxElements = await maxNumberOfElements.getValue();
-      const savedColorA = await colorA.getValue();
-      const savedColorB = await colorB.getValue();
 
       // Update the state with the loaded values.
       // The defaultValue from defineItem will be used as a fallback.
       setApiKey(savedApiKey || '');
       setPixels(savedPixels || 100);
       setMaxElements(savedMaxElements || 12);
-      setColorAValue(savedColorA || '#667eea');
-      setColorBValue(savedColorB || '#764ba2');
     }
     loadSettings();
   }, []); // Empty array ensures this runs only once.
@@ -46,8 +37,6 @@ function App() {
         geminiApiKey.setValue(apiKey),
         pixelDistance.setValue(pixels),
         maxNumberOfElements.setValue(maxElements),
-        colorA.setValue(colorAValue),
-        colorB.setValue(colorBValue),
       ]);
       setStatus('Settings saved successfully!');
       setTimeout(() => setStatus(''), 3000);
@@ -103,31 +92,7 @@ function App() {
           placeholder="100"
         />
       </Input.Wrapper>
-
-      {/* Color A */}
-      <Input.Wrapper
-        label="Color A"
-        description="Primary color for the bubbles."
-      >
-        <ColorInput
-          value={colorAValue}
-          onChange={(e) => setColorAValue(e.target.value)}
-          placeholder="#667eea"
-        />
-      </Input.Wrapper>
-
-      {/* Color B */}
-      <Input.Wrapper
-        label="Color B"
-        description="Secondary color for the bubbles."
-      >
-        <ColorInput
-          value={colorBValue}
-          onChange={(e) => setColorBValue(e.target.value)}
-          placeholder="#764ba2"
-        />
-      </Input.Wrapper>
-
+      
       {/* Save Button and Status */}
       <Group justify="space-between" mt="md">
         <Button onClick={handleSave}>Save Settings</Button>

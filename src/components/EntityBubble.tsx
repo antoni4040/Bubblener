@@ -1,7 +1,13 @@
 import { Popover, Text } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
+import { Entity } from '../utils/Entity';
 
-export const EntityBubble = ({ entity, onEntityClick, colorA, colorB }) => {
+interface EntityBubbleProps {
+    entity: Entity;
+    onEntityClick: (entity: Entity) => void;
+}
+
+export const EntityBubble = ({ entity, onEntityClick }: EntityBubbleProps) => {
     // 1. Manage the popover's opened/closed state
     const [opened, { close, open }] = useDisclosure(false);
 
@@ -11,13 +17,13 @@ export const EntityBubble = ({ entity, onEntityClick, colorA, colorB }) => {
             <Popover.Target>
                 <div
                     className="entity-bubble"
-                    style={{ background: `linear-gradient(135deg, ${colorA} 0%, ${colorB} 100%)` }}
+                    style={{ background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)" }}
                     // 3. Open on mouse enter and close on mouse leave
                     onMouseEnter={open}
                     onMouseLeave={close}
                     onClick={() => onEntityClick(entity)}
                 >
-                    {entity.name}
+                    {entity.entity_name}
                 </div>
             </Popover.Target>
             {/* 4. Prevent the dropdown from stealing mouse events */}

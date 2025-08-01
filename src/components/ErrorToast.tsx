@@ -1,4 +1,9 @@
-export const ErrorToast = ({ error, onClose }) => {
+type ErrorToastProps = {
+    error: { title: string; message: string } | null;
+    onClose: () => void;
+};
+
+export const ErrorToast = ({ error, onClose }: ErrorToastProps) => {
     if (!error) return null;
 
     return (

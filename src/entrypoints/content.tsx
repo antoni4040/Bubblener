@@ -3,17 +3,16 @@ import ReactDOM from 'react-dom/client';
 import { useState, useEffect } from 'react';
 import { MantineProvider } from '@mantine/core';
 import '@mantine/core/styles.css';
+import { Entity } from '@/utils/Entity';
 
 // Main App Component
 const EntityBubblesApp = () => {
   const [entities, setEntities] = useState([]);
-  const [selectedEntity, setSelectedEntity] = useState(null);
+  const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
   const [error, setError] = useState(null);
   const [scrollThreshold, setScrollThreshold] = useState(500);
-  const [getColorA, setColorA] = useState('#667eea');
-  const [getColorB, setColorB] = useState('#764ba2');
 
   useEffect(() => {
     // Load scroll threshold on component mount
@@ -21,19 +20,10 @@ const EntityBubblesApp = () => {
       try {
         const threshold = await pixelDistance.getValue();
         setScrollThreshold(threshold);
-
-        const savedColorA = await colorA.getValue();
-        const savedColorB = await colorB.getValue();
-        console.log(`Scroll threshold set to ${threshold}px`);
-        console.log(`Color A: ${savedColorA}, Color B: ${savedColorB}`);
         // Set colors from storage or use defaults
-        setColorA(savedColorA || '#667eea');
-        setColorB(savedColorB || '#764ba2');
       } catch (error) {
         console.warn('Could not load scroll threshold, using default:', error);
         setScrollThreshold(500); // Fallback value
-        setColorA('#667eea');
-        setColorB('#764ba2');
       }
     };
 
@@ -60,7 +50,7 @@ const EntityBubblesApp = () => {
         );
 
         if (isVisible) {
-          visibleText += element.innerText + '\n';
+          visibleText += (element as HTMLElement).innerText + '\n';
         }
       });
 
@@ -68,14 +58,14 @@ const EntityBubblesApp = () => {
     };
 
     // Send text to background script for processing
-    const processText = (text) => {
+    const processText = (text: string) => {
       const maxTextLength = 16000;
       if (text.length > maxTextLength) {
         text = text.substring(0, maxTextLength);
         console.log(`Text truncated to ${maxTextLength} characters.`);
       }
 
-      chrome.runtime.sendMessage({ text })
+      browser.runtime.sendMessage({ text })
         .then(response => {
           if (response && response.status === "processing") {
             console.log("Message sent to background script for processing.");
@@ -89,7 +79,11 @@ const EntityBubblesApp = () => {
     processText(initialText);
 
     // Listen for entities from background script
-    const messageListener = (request, sender, sendResponse) => {
+    const messageListener = (
+      request: any,
+      sender: any,
+      sendResponse: (response?: any) => void
+    ) => {
       if (request.entities) {
         setEntities(request.entities.nodes || []);
         setError(null); // Clear any previous errors
@@ -108,7 +102,7 @@ const EntityBubblesApp = () => {
 
     // Scroll listener with debouncing
     let lastScrollY = window.scrollY;
-    let scrollTimeout = null;
+    let scrollTimeout: any = null;
 
     const handleScroll = () => {
       clearTimeout(scrollTimeout);
@@ -133,7 +127,7 @@ const EntityBubblesApp = () => {
     };
   }, []);
 
-  const handleEntityClick = (entity) => {
+  const handleEntityClick = (entity: Entity) => {
     setSelectedEntity(entity);
     setIsModalOpen(true);
   };
@@ -156,8 +150,6 @@ const EntityBubblesApp = () => {
           <EntityBubble
             key={index}
             entity={entity}
-            colorA={getColorA}
-            colorB={getColorB}
             onEntityClick={handleEntityClick}
           />
         ))}
