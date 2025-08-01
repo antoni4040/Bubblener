@@ -8,6 +8,7 @@ import { Loader, ActionIcon, Image } from '@mantine/core';
 import { IconX, IconRefresh } from '@tabler/icons-react';
 import BubblesIcon from '@/assets/icon.svg';
 import CustomCircularButton from '@/components/CustomCircularButton/CustomCircularButton';
+import { getVisibleTextOnScreen } from '@/utils/domUtils';
 
 // Main App Component
 const EntityBubblesApp = () => {
@@ -18,38 +19,6 @@ const EntityBubblesApp = () => {
   const [scrollThreshold, setScrollThreshold] = useState(500);
   const [isLoading, setLoading] = useState(false);
   const [showBubbles, setShowBubbles] = useState(true);
-
-  // Function to get visible text on screen
-  const getVisibleTextOnScreen = () => {
-    if (!showBubbles) {
-      return '';
-    }
-
-    const allTextElements = Array.from(
-      document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, a, span, td')
-    );
-    let visibleText = '';
-
-    allTextElements.forEach(element => {
-      const rect = element.getBoundingClientRect();
-      const style = window.getComputedStyle(element);
-
-      const isVisible = (
-        style.visibility !== 'hidden' &&
-        style.display !== 'none' &&
-        rect.top < window.innerHeight &&
-        rect.bottom >= 0 &&
-        rect.left < window.innerWidth &&
-        rect.right >= 0
-      );
-
-      if (isVisible) {
-        visibleText += (element as HTMLElement).innerText + '\n';
-      }
-    });
-
-    return visibleText;
-  };
 
   // Send text to background script for processing
   const processText = (text: string) => {
