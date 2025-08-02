@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Entity } from '@/utils/Entity';
-import { Loader, ActionIcon, Image } from '@mantine/core';
+import { ActionIcon } from '@mantine/core';
 import { IconX, IconRefresh } from '@tabler/icons-react';
 import BubblesIcon from '@/assets/icon.svg';
 import CustomCircularButton from '@/components/CustomCircularButton/CustomCircularButton';
-import { getVisibleTextOnScreen } from '@/utils/domUtils';
+import getVisibleTextOnScreen from '@/utils/domUtils';
 import EntityBubble from './EntityBubble/EntityBubble';
 import EntityModal from './EntityModal/EntityModal';
+import LoadingIndicator from './LoadingIndicator/LoadingIndicator';
 
 const BubblesContainer = () => {
     const [entities, setEntities] = useState([]);
@@ -130,7 +131,7 @@ const BubblesContainer = () => {
 
     return (
         <>
-            {showBubbles && <div id="entity-bubbles-container" style={{ display: !isLoading ? 'flex' : 'none' }}>
+            {showBubbles && !isLoading && <div id="entity-bubbles-container">
                 {entities.map((entity, index) => (
                     <EntityBubble
                         key={index}
@@ -143,7 +144,7 @@ const BubblesContainer = () => {
                         color='grey'
                         size="lg"
                         aria-label="Reload bubbles"
-                        style={{ borderRadius: '50%', marginRight: '8px', marginLeft: 'auto' }}
+                        style={{ borderRadius: '50%', marginRight: '8px', marginLeft: '2rem' }}
                         onClick={() => onReload()}
                     >
                         <IconRefresh />
@@ -177,10 +178,9 @@ const BubblesContainer = () => {
                 </div>
             )}
 
-            <div className="loader-indicator" style={{ display: isLoading ? 'flex' : 'none' }}>
-                <Loader size="sm" />
-                <span>Processing entities...</span>
-            </div>
+            {isLoading && (
+                <LoadingIndicator />
+            )}
 
             <EntityModal
                 entity={selectedEntity}

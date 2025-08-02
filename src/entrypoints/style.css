@@ -11,6 +11,7 @@
 }
 
 #entity-bubbles-container {
+  display: flex;
   position: fixed;
   top: 10px;
   right: 10px;
@@ -90,19 +91,4 @@
     transform: translate(-50%, 0);
     opacity: 1;
   }
-}
-
-.loader-indicator {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  background-color: rgba(255, 255, 255, 0.9);
-  padding: 12px 16px;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  align-items: center;
-  gap: 8px;
-  z-index: 1000;
-  font-size: 14px;
-  color: #333;
 }

@@ -1,4 +1,4 @@
-export const getVisibleTextOnScreen = (): string => {
+const getVisibleTextOnScreen = (): string => {
   // 1. Prioritized Content Extraction
   // Look for common main content containers in a preferred order.
   const prioritySelectors = [
@@ -48,3 +48,5 @@ export const getVisibleTextOnScreen = (): string => {
 
   return visibleText;
 };
+
+export default getVisibleTextOnScreen;
