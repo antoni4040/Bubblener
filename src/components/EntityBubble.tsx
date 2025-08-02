@@ -9,7 +9,7 @@ interface EntityBubbleProps {
 
 export const EntityBubble = ({ entity, onEntityClick }: EntityBubbleProps) => {
     const [opened, { close, open }] = useDisclosure(false);
-    
+
     // Define bold gradients for each entity type
     const getEntityGradient = (entityType: string) => {
         switch (entityType) {
@@ -31,7 +31,7 @@ export const EntityBubble = ({ entity, onEntityClick }: EntityBubbleProps) => {
             <Popover.Target>
                 <div
                     className="entity-bubble"
-                    style={{ 
+                    style={{
                         background: getEntityGradient(entity.entity_type),
                         color: 'white' // Ensure white text
                     }}
@@ -43,7 +43,7 @@ export const EntityBubble = ({ entity, onEntityClick }: EntityBubbleProps) => {
                 </div>
             </Popover.Target>
             <Popover.Dropdown style={{ pointerEvents: 'none' }}>
-                <Text size="sm">{entity.description}</Text>
+                <Text size="sm" style={{ color: 'black' }}>{entity.description}</Text>
             </Popover.Dropdown>
         </Popover>
     );

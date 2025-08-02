@@ -1,4 +1,15 @@
-/* Entity Bubbles Container */
+:host {
+  /*
+   * The 'all: initial' property is a powerful reset that reverts all
+   * CSS properties to their initial values. This is the strongest
+   * and simplest way to create a style boundary.
+   */
+  all: initial !important;
+
+  font-size: 16px;
+  color: white;
+}
+
 #entity-bubbles-container {
   position: fixed;
   top: 10px;
@@ -50,7 +61,9 @@
 
 .modal-content {
   background-color: #fefefe;
-  margin: 15% auto;
+  margin-left: auto;
+  margin-right: auto;
+  margin-top: 10%;
   padding: 20px;
   border: none;
   border-radius: 12px;
@@ -58,6 +71,7 @@
   max-width: 500px;
   position: relative;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  padding-bottom: 1px;
 }
 
 .close-button {
@@ -85,9 +99,15 @@
 }
 
 #modal-summary {
-  color: #666;
+  color: #383838;
   line-height: 1.6;
   font-size: 16px;
+}
+
+#modal-contextual-enrichment {
+  color: #383838;
+  line-height: 1.5;
+  font-size: 14px;
 }
 
 /* Error Toast Styles */
@@ -154,4 +174,19 @@
     transform: translate(-50%, 0);
     opacity: 1;
   }
+}
+
+.loader-indicator {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background-color: rgba(255, 255, 255, 0.9);
+  padding: 12px 16px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  align-items: center;
+  gap: 8px;
+  z-index: 1000;
+  font-size: 14px;
+  color: #333;
 }

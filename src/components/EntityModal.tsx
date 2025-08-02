@@ -19,6 +19,10 @@ export const EntityModal = ({ entity, isOpen, onClose }: EntityModalProps) => {
                 <span className="close-button" onClick={onClose}>&times;</span>
                 <h2 id="modal-title">{entity.entity_name}</h2>
                 <p id="modal-summary">{entity.summary_from_text}</p>
+                {entity.contextual_enrichment && <p id="modal-contextual-enrichment">
+                    {entity.contextual_enrichment}
+                </p>}
+                <p style={{ marginTop: '1rem', color: '#818181' }}>Please note: The information provided by AI may not always be accurate or complete.</p>
             </div>
         </div>
     );
