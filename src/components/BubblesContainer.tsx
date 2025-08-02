@@ -5,6 +5,8 @@ import { IconX, IconRefresh } from '@tabler/icons-react';
 import BubblesIcon from '@/assets/icon.svg';
 import CustomCircularButton from '@/components/CustomCircularButton/CustomCircularButton';
 import { getVisibleTextOnScreen } from '@/utils/domUtils';
+import EntityBubble from './EntityBubble/EntityBubble';
+import EntityModal from './EntityModal/EntityModal';
 
 const BubblesContainer = () => {
     const [entities, setEntities] = useState([]);

@@ -1,28 +1,28 @@
 import { Popover, Text } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { Entity } from '../utils/Entity';
+import { Entity } from '../../utils/Entity';
+import styles from './EntityBubble.module.css';
 
 interface EntityBubbleProps {
     entity: Entity;
     onEntityClick: (entity: Entity) => void;
 }
 
-export const EntityBubble = ({ entity, onEntityClick }: EntityBubbleProps) => {
+const EntityBubble = ({ entity, onEntityClick }: EntityBubbleProps) => {
     const [opened, { close, open }] = useDisclosure(false);
 
-    // Define bold gradients for each entity type
     const getEntityGradient = (entityType: string) => {
         switch (entityType) {
             case 'Person':
-                return "linear-gradient(135deg, #e73c7e 0%, #23a6d5 100%)"; // Magenta to blue
+                return "linear-gradient(135deg, #e73c7e 0%, #23a6d5 100%)";
             case 'Organization':
-                return "linear-gradient(135deg, #11998e 0%, #38ef7d 100%)"; // Dark teal to green
+                return "linear-gradient(135deg, #11998e 0%, #38ef7d 100%)";
             case 'Location':
-                return "linear-gradient(135deg, #f12711 0%, #f5af19 100%)"; // Red to orange
+                return "linear-gradient(135deg, #f12711 0%, #f5af19 100%)";
             case 'Key Concept/Theme':
-                return "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"; // Your original gradient
+                return "linear-gradient(135deg, #667eea 0%, #764ba2 100%)";
             default:
-                return "linear-gradient(135deg, #8360c3 0%, #2ebf91 100%)"; // Purple to teal fallback
+                return "linear-gradient(135deg, #8360c3 0%, #2ebf91 100%)";
         }
     };
 
@@ -30,7 +30,7 @@ export const EntityBubble = ({ entity, onEntityClick }: EntityBubbleProps) => {
         <Popover width={200} position="bottom" withArrow shadow="md" opened={opened} withinPortal={false}>
             <Popover.Target>
                 <div
-                    className="entity-bubble"
+                    className={styles.entityBubble}
                     style={{
                         background: getEntityGradient(entity.entity_type),
                         color: 'white' // Ensure white text
@@ -48,3 +48,5 @@ export const EntityBubble = ({ entity, onEntityClick }: EntityBubbleProps) => {
         </Popover>
     );
 };
+
+export default EntityBubble;
