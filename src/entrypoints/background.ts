@@ -1,4 +1,6 @@
 import createAPIRequest from '../utils/promptUtils';
+import geminiApiKey from '../utils/storage/geminiApiKey';
+import maxNumberOfElements from '../utils/storage/maxNumberOfElements';
 
 export default defineBackground(() => {
   // Track which tabs have the extension activated
@@ -114,15 +116,21 @@ export default defineBackground(() => {
       console.error('Error calling Gemini API or processing response:', error);
 
       // Simple error handling - just show the error message
-      const errorMessage = error?.message || 'An unknown error occurred while processing entities.';
-
-      // Show notification to user
-      browser.notifications.create({
-        type: 'basic',
-        iconUrl: browser.runtime.getURL('/icon-128.png'),
-        title: 'Error',
-        message: errorMessage,
-      });
+      let errorMessage = 'An unknown error occurred while processing entities.';
+      if (error?.message) {
+        try {
+          // Try to parse the error message as JSON (for API errors)
+          const errorObj = JSON.parse(error.message);
+          if (errorObj?.error?.message) {
+            errorMessage = errorObj.error.message;
+          } else {
+            errorMessage = error.message;
+          }
+        } catch (parseError) {
+          // If parsing fails, use the original error message
+          errorMessage = error.message;
+        }
+      }
 
       // Send error message to content script
       if (sender.tab?.id) {

@@ -1,0 +1,52 @@
+.errorToast {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10003;
+  animation: slideDown 0.3s ease-out;
+}
+
+.errorContent {
+  background: linear-gradient(135deg, #ff6b6b, #ee5a52);
+  color: white;
+  padding: 16px 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
+  max-width: 400px;
+  position: relative;
+}
+
+.errorContent strong {
+  display: block;
+  font-size: 16px;
+  margin-bottom: 8px;
+}
+
+.errorContent p {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.errorContent button {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  background: none;
+  border: none;
+  color: white;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.errorContent button:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+}

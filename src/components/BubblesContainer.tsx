@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Entity } from '@/utils/Entity';
+import Entity from '@/utils/types/Entity';
 import { ActionIcon } from '@mantine/core';
 import { IconX, IconRefresh } from '@tabler/icons-react';
 import BubblesIcon from '@/assets/icon.svg';
@@ -8,15 +8,20 @@ import getVisibleTextOnScreen from '@/utils/domUtils';
 import EntityBubble from './EntityBubble/EntityBubble';
 import EntityModal from './EntityModal/EntityModal';
 import LoadingIndicator from './LoadingIndicator/LoadingIndicator';
+import ErrorToast from './ErrorToast/ErrorToast';
+import pixelDistance from '@/utils/storage/pixelDistance';
+import defaults from '@/utils/constants/defaults';
+import bubbleColors from '@/utils/storage/bubbleColors';
 
 const BubblesContainer = () => {
     const [entities, setEntities] = useState([]);
     const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [error, setError] = useState(null);
-    const [scrollThreshold, setScrollThreshold] = useState(500);
+    const [scrollThreshold, setScrollThreshold] = useState(defaults.scrollThreshold);
     const [isLoading, setLoading] = useState(false);
     const [showBubbles, setShowBubbles] = useState(true);
+    const [entityColors, setEntityColors] = useState(defaults.colorSettings);
 
     // Send text to background script for processing
     const processText = (text: string) => {
@@ -46,10 +51,12 @@ const BubblesContainer = () => {
             try {
                 const threshold = await pixelDistance.getValue();
                 setScrollThreshold(threshold);
-                // Set colors from storage or use defaults
+
+                const colors = await bubbleColors.getValue();
+                setEntityColors(colors);
             } catch (error) {
-                console.warn('Could not load scroll threshold, using default:', error);
-                setScrollThreshold(500); // Fallback value
+                setScrollThreshold(defaults.scrollThreshold);
+                setEntityColors(defaults.colorSettings);
             }
         };
 
@@ -136,6 +143,7 @@ const BubblesContainer = () => {
                     <EntityBubble
                         key={index}
                         entity={entity}
+                        colors ={entityColors}
                         onEntityClick={handleEntityClick}
                     />
                 ))}

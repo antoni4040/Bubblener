@@ -27,60 +27,6 @@
   border: 1px solid black
 }
 
-/* Error Toast Styles */
-.error-toast {
-  position: fixed;
-  top: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 10003;
-  animation: slideDown 0.3s ease-out;
-}
-
-.error-content {
-  background: linear-gradient(135deg, #ff6b6b, #ee5a52);
-  color: white;
-  padding: 16px 20px;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
-  max-width: 400px;
-  position: relative;
-}
-
-.error-content strong {
-  display: block;
-  font-size: 16px;
-  margin-bottom: 8px;
-}
-
-.error-content p {
-  margin: 0;
-  font-size: 16px;
-  line-height: 1.4;
-}
-
-.error-content button {
-  position: absolute;
-  top: 8px;
-  right: 12px;
-  background: none;
-  border: none;
-  color: white;
-  font-size: 20px;
-  cursor: pointer;
-  padding: 0;
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.error-content button:hover {
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 50%;
-}
-
 @keyframes slideDown {
   from {
     transform: translate(-50%, -100%);

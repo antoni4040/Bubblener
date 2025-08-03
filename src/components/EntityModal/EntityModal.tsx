@@ -1,4 +1,4 @@
-import { Entity } from "@/utils/Entity";
+import Entity from "@/utils/types/Entity";
 import styles from "./EntityModal.module.css";
 
 type EntityModalProps = {
