@@ -6,16 +6,18 @@ import './App.css';
 import geminiApiKey from '../../utils/storage/geminiApiKey';
 import pixelDistance from '../../utils/storage/pixelDistance'
 import maxNumberOfElements from '../../utils/storage/maxNumberOfElements';
+import maxNumberOfCharacters from '@/utils/storage/maxNumberOfCharacters';
 import EntityColorSection from '../../components/EntityColorSection/EntityColorSection';
 import defaults from '../../utils/constants/defaults';
 import bubbleColors from '@/utils/storage/bubbleColors';
 
 function App() {
   const [apiKey, setApiKey] = useState('');
-  const [pixels, setPixels] = useState(100);
+  const [pixels, setPixels] = useState(defaults.scrollThreshold);
   const [status, setStatus] = useState('');
+  const [numberOfCharacters, setNumberOfCharacters] = useState(defaults.maxCharacters);
   const [statusType, setStatusType] = useState('success');
-  const [maxElements, setMaxElements] = useState(12);
+  const [maxElements, setMaxElements] = useState(defaults.maxElements);
   const [openSections, setOpenSections] = useState({
     person: false,
     organization: false,
@@ -51,18 +53,21 @@ function App() {
         savedApiKey,
         savedPixels,
         savedMaxElements,
-        savedEntityColors
+        savedEntityColors,
+        savedNumberOfCharacters
       ] = await Promise.all([
         geminiApiKey.getValue(),
         pixelDistance.getValue(),
         maxNumberOfElements.getValue(),
-        bubbleColors.getValue()
+        bubbleColors.getValue(),
+        maxNumberOfCharacters.getValue()
       ]);
 
       setApiKey(savedApiKey || '');
       setPixels(savedPixels || defaults.scrollThreshold);
       setMaxElements(savedMaxElements || defaults.maxElements);
       setColorSettings(savedEntityColors || defaults.colorSettings);
+      setNumberOfCharacters(savedNumberOfCharacters || defaults.maxCharacters);
     }
     loadSettings();
   }, []);
@@ -74,6 +79,7 @@ function App() {
         pixelDistance.setValue(pixels),
         maxNumberOfElements.setValue(maxElements),
         bubbleColors.setValue(colorSettings),
+        maxNumberOfCharacters.setValue(numberOfCharacters)
       ]);
       setStatus('Settings saved successfully!');
       setStatusType('success');
@@ -87,17 +93,17 @@ function App() {
 
   const handleResetAll = async () => {
     try {
-      // Reset to default values
-      setApiKey(defaults.apiKey);
       setPixels(defaults.scrollThreshold);
       setMaxElements(defaults.maxElements);
       setColorSettings(defaults.colorSettings);
+      setNumberOfCharacters(defaults.maxCharacters);
 
       // Save default values to storage
       await Promise.all([
-        geminiApiKey.setValue(defaults.apiKey),
         pixelDistance.setValue(defaults.scrollThreshold),
         maxNumberOfElements.setValue(defaults.maxElements),
+        bubbleColors.setValue(defaults.colorSettings),
+        maxNumberOfCharacters.setValue(defaults.maxCharacters),
       ]);
 
       setStatus('All settings reset to defaults!');
@@ -120,6 +126,10 @@ function App() {
 
   const handleResetPixels = () => {
     setPixels(defaults.scrollThreshold);
+  };
+
+  const handleResetNumberOfCharacters = () => {
+    setNumberOfCharacters(defaults.maxCharacters);
   };
 
   const toggleSection = (section: keyof typeof openSections) => {
@@ -188,7 +198,7 @@ function App() {
           <NumberInput
             value={maxElements}
             onChange={(value) => setMaxElements(Number(value))}
-            placeholder="12"
+            placeholder={defaults.maxElements.toString()}
             min={1}
             max={100}
             suffix=' bubbles'
@@ -206,6 +216,31 @@ function App() {
       </Input.Wrapper>
 
       <Input.Wrapper
+        label="Max Number of Characters"
+        description="Maximum number of characters to send to API."
+      >
+        <Group gap="xs">
+          <NumberInput
+            value={numberOfCharacters}
+            onChange={(value) => setNumberOfCharacters(Number(value))}
+            placeholder={defaults.maxCharacters.toString()}
+            min={1000}
+            max={100000}
+            suffix=' characters'
+            style={{ flex: 1 }}
+          />
+          <ActionIcon
+            variant="light"
+            color="gray"
+            onClick={handleResetNumberOfCharacters}
+            title="Reset Max Characters"
+          >
+            <IconRotateClockwise size={16} />
+          </ActionIcon>
+        </Group>
+      </Input.Wrapper>
+
+      <Input.Wrapper
         label="Scroll Trigger Distance (pixels)"
         description="How far to scroll before the bubbles reload."
       >
@@ -213,7 +248,7 @@ function App() {
           <NumberInput
             value={pixels}
             onChange={(value) => setPixels(Number(value))}
-            placeholder="100"
+            placeholder={defaults.scrollThreshold.toString()}
             suffix="px"
             style={{ flex: 1 }}
           />

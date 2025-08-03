@@ -1,4 +1,4 @@
-import { Popover, Text } from '@mantine/core';
+import { Popover, Text, Badge } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import Entity from '../../utils/types/Entity';
 import styles from './EntityBubble.module.css';
@@ -60,6 +60,12 @@ const EntityBubble = ({ entity, colors, onEntityClick }: EntityBubbleProps) => {
                 </div>
             </Popover.Target>
             <Popover.Dropdown style={{ pointerEvents: 'none', width: "300px" }}>
+                <Badge size='sm' style={{
+                    marginBottom: '8px',
+                    background: getEntityGradient(entity.entity_type), color: getEntityColor(entity.entity_type)
+                }}>
+                    {entity.entity_type}
+                </Badge>
                 <Text className={styles.popoverText}>{entity.description}</Text>
             </Popover.Dropdown>
         </Popover>

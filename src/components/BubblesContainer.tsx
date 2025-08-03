@@ -12,6 +12,7 @@ import ErrorToast from './ErrorToast/ErrorToast';
 import pixelDistance from '@/utils/storage/pixelDistance';
 import defaults from '@/utils/constants/defaults';
 import bubbleColors from '@/utils/storage/bubbleColors';
+import maxNumberOfCharacters from '@/utils/storage/maxNumberOfCharacters';
 
 const BubblesContainer = () => {
     const [entities, setEntities] = useState([]);
@@ -22,6 +23,7 @@ const BubblesContainer = () => {
     const [isLoading, setLoading] = useState(false);
     const [showBubbles, setShowBubbles] = useState(true);
     const [entityColors, setEntityColors] = useState(defaults.colorSettings);
+    const [numberOfCharacters, setNumberOfCharacters] = useState(defaults.maxCharacters);
 
     // Send text to background script for processing
     const processText = (text: string) => {
@@ -29,7 +31,7 @@ const BubblesContainer = () => {
             return;
         }
 
-        const maxTextLength = 16000;
+        const maxTextLength = numberOfCharacters || defaults.maxCharacters;
         if (text.length > maxTextLength) {
             text = text.substring(0, maxTextLength);
             console.log(`Text truncated to ${maxTextLength} characters.`);
@@ -54,9 +56,13 @@ const BubblesContainer = () => {
 
                 const colors = await bubbleColors.getValue();
                 setEntityColors(colors);
+
+                const characters = await maxNumberOfCharacters.getValue();
+                setNumberOfCharacters(characters);
             } catch (error) {
                 setScrollThreshold(defaults.scrollThreshold);
                 setEntityColors(defaults.colorSettings);
+                setNumberOfCharacters(defaults.maxCharacters);
             }
         };
 
@@ -143,7 +149,7 @@ const BubblesContainer = () => {
                     <EntityBubble
                         key={index}
                         entity={entity}
-                        colors ={entityColors}
+                        colors={entityColors}
                         onEntityClick={handleEntityClick}
                     />
                 ))}
@@ -193,6 +199,7 @@ const BubblesContainer = () => {
             <EntityModal
                 entity={selectedEntity}
                 isOpen={isModalOpen}
+                colors={entityColors}
                 onClose={handleCloseModal}
             />
 

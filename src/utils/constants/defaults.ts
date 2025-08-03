@@ -1,6 +1,7 @@
 const defaults = {
     apiKey: '',
     scrollThreshold: 1000,
+    maxCharacters: 16000,
     maxElements: 8,
     colorSettings: {
         person: {

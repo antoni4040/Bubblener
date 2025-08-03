@@ -1,5 +1,7 @@
+import defaults from "../constants/defaults";
+
 const pixelDistance = storage.defineItem<number>('local:pixelDistance', {
-    defaultValue: 100,
+    defaultValue: defaults.scrollThreshold,
 });
 
 export default pixelDistance;
