@@ -1,15 +1,18 @@
-import { useState, useEffect } from 'react';
-import { PasswordInput, Title, Input, Stack, NumberInput, Button, Group, Text, Image, ActionIcon, Collapse, ColorInput } from '@mantine/core';
-import { IconDeviceFloppy, IconRestore, IconRotateClockwise, IconChevronDown, IconChevronUp } from '@tabler/icons-react';
-import bubblenerLogo from '/icon-128.png';
-import './App.css';
-import geminiApiKey from '../../utils/storage/geminiApiKey';
-import pixelDistance from '../../utils/storage/pixelDistance'
-import maxNumberOfElements from '../../utils/storage/maxNumberOfElements';
+import { BubblePositionEnum } from '@/utils/types/bubblePositionEnum';
+import bubbleColors from '@/utils/storage/bubbleColors';
+import bubblePosition from '@/utils/storage/bubblePosition';
 import maxNumberOfCharacters from '@/utils/storage/maxNumberOfCharacters';
+import { ActionIcon, Button, Combobox, Group, Image, Input, InputBase, NumberInput, PasswordInput, Stack, Text, Title, useCombobox } from '@mantine/core';
+import { IconDeviceFloppy, IconRestore, IconRotateClockwise } from '@tabler/icons-react';
+import { useEffect, useState } from 'react';
 import EntityColorSection from '../../components/EntityColorSection/EntityColorSection';
 import defaults from '../../utils/constants/defaults';
-import bubbleColors from '@/utils/storage/bubbleColors';
+import geminiApiKey from '../../utils/storage/geminiApiKey';
+import maxNumberOfElements from '../../utils/storage/maxNumberOfElements';
+import pixelDistance from '../../utils/storage/pixelDistance';
+import bubbleDistance from '@/utils/storage/bubbleDistance';
+import './App.css';
+import bubblenerLogo from '/icon-128.png';
 
 function App() {
   const [apiKey, setApiKey] = useState('');
@@ -46,6 +49,8 @@ function App() {
       textColor: defaults.colorSettings.keyConcept.textColor
     }
   });
+  const [bubblePositionSetting, setBubblePositionSetting] = useState<BubblePositionEnum>(defaults.position);
+  const [getBubbleDistance, setBubbleDistance] = useState(defaults.bubbleDistance);
 
   useEffect(() => {
     async function loadSettings() {
@@ -54,13 +59,17 @@ function App() {
         savedPixels,
         savedMaxElements,
         savedEntityColors,
-        savedNumberOfCharacters
+        savedNumberOfCharacters,
+        savedBubblePosition,
+        savedBubbleDistance
       ] = await Promise.all([
         geminiApiKey.getValue(),
         pixelDistance.getValue(),
         maxNumberOfElements.getValue(),
         bubbleColors.getValue(),
-        maxNumberOfCharacters.getValue()
+        maxNumberOfCharacters.getValue(),
+        bubblePosition.getValue(),
+        bubbleDistance.getValue()
       ]);
 
       setApiKey(savedApiKey || '');
@@ -68,6 +77,8 @@ function App() {
       setMaxElements(savedMaxElements || defaults.maxElements);
       setColorSettings(savedEntityColors || defaults.colorSettings);
       setNumberOfCharacters(savedNumberOfCharacters || defaults.maxCharacters);
+      setBubblePositionSetting(savedBubblePosition || defaults.position);
+      setBubbleDistance(savedBubbleDistance || defaults.bubbleDistance);
     }
     loadSettings();
   }, []);
@@ -79,7 +90,9 @@ function App() {
         pixelDistance.setValue(pixels),
         maxNumberOfElements.setValue(maxElements),
         bubbleColors.setValue(colorSettings),
-        maxNumberOfCharacters.setValue(numberOfCharacters)
+        maxNumberOfCharacters.setValue(numberOfCharacters),
+        bubblePosition.setValue(bubblePositionSetting),
+        bubbleDistance.setValue(getBubbleDistance)
       ]);
       setStatus('Settings saved successfully!');
       setStatusType('success');
@@ -97,6 +110,8 @@ function App() {
       setMaxElements(defaults.maxElements);
       setColorSettings(defaults.colorSettings);
       setNumberOfCharacters(defaults.maxCharacters);
+      setBubblePositionSetting(defaults.position);
+      setBubbleDistance(defaults.bubbleDistance);
 
       // Save default values to storage
       await Promise.all([
@@ -104,6 +119,8 @@ function App() {
         maxNumberOfElements.setValue(defaults.maxElements),
         bubbleColors.setValue(defaults.colorSettings),
         maxNumberOfCharacters.setValue(defaults.maxCharacters),
+        bubblePosition.setValue(defaults.position),
+        bubbleDistance.setValue(defaults.bubbleDistance)
       ]);
 
       setStatus('All settings reset to defaults!');
@@ -132,12 +149,30 @@ function App() {
     setNumberOfCharacters(defaults.maxCharacters);
   };
 
+  const handleResetBubblePosition = () => {
+    setBubblePositionSetting(defaults.position);
+  };
+
+  const handleResetBubbleDistance = () => {
+    setBubbleDistance(defaults.bubbleDistance);
+  };
+
   const toggleSection = (section: keyof typeof openSections) => {
     setOpenSections(prev => ({
       ...prev,
       [section]: !prev[section]
     }));
   };
+
+  const positionCombobox = useCombobox({
+    onDropdownClose: () => positionCombobox.resetSelectedOption(),
+  });
+
+  const positionOptions = Object.values(BubblePositionEnum).map(pos => (
+    <Combobox.Option key={pos} value={pos}>
+      {pos}
+    </Combobox.Option>
+  ));
 
   const updateColorSetting = (
     entityType: keyof typeof colorSettings,
@@ -257,6 +292,72 @@ function App() {
             color="gray"
             onClick={handleResetPixels}
             title="Reset Scroll Distance"
+          >
+            <IconRotateClockwise size={16} />
+          </ActionIcon>
+        </Group>
+      </Input.Wrapper>
+
+      <Input.Wrapper
+        label="Bubble Position"
+        description="Choose where the bubbles will appear on the screen."
+      >
+        <Group gap="xs">
+          <Combobox
+            store={positionCombobox}
+            onOptionSubmit={(val) => {
+              setBubblePositionSetting(val as BubblePositionEnum);
+              positionCombobox.closeDropdown();
+            }}
+          >
+            <Combobox.Target>
+              <InputBase
+                component="button"
+                type="button"
+                pointer
+                rightSection={<Combobox.Chevron />}
+                rightSectionPointerEvents="none"
+                onClick={() => positionCombobox.toggleDropdown()}
+                style={{ flex: 1 }}
+              >
+                {bubblePositionSetting || <Input.Placeholder>Pick value</Input.Placeholder>}
+              </InputBase>
+            </Combobox.Target>
+
+            <Combobox.Dropdown>
+              <Combobox.Options>{positionOptions}</Combobox.Options>
+            </Combobox.Dropdown>
+          </Combobox>
+          <ActionIcon
+            variant="light"
+            color="gray"
+            onClick={handleResetBubblePosition}
+            title="Reset Bubble Position"
+          >
+            <IconRotateClockwise size={16} />
+          </ActionIcon>
+        </Group>
+      </Input.Wrapper>
+
+      <Input.Wrapper
+        label="Bubble Distance"
+        description="Distance of bubbles from the edge of the screen."
+      >
+        <Group gap="xs">
+          <NumberInput
+            value={getBubbleDistance}
+            onChange={(value) => setBubbleDistance(Number(value))}
+            placeholder={defaults.bubbleDistance.toString()}
+            min={10}
+            max={1000}
+            suffix='px'
+            style={{ flex: 1 }}
+          />
+          <ActionIcon
+            variant="light"
+            color="gray"
+            onClick={handleResetBubbleDistance}
+            title="Reset Bubble Distance"
           >
             <IconRotateClockwise size={16} />
           </ActionIcon>

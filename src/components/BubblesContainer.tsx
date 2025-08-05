@@ -1,19 +1,21 @@
-import { useState, useEffect } from 'react';
-import Entity from '@/utils/types/Entity';
-import { ActionIcon } from '@mantine/core';
-import { IconX, IconRefresh } from '@tabler/icons-react';
 import BubblesIcon from '@/assets/icon.svg';
-import CustomCircularButton from '@/components/CustomCircularButton/CustomCircularButton';
-import getVisibleTextOnScreen from '@/utils/domUtils';
-import EntityBubble from './EntityBubble/EntityBubble';
-import EntityModal from './EntityModal/EntityModal';
-import LoadingIndicator from './LoadingIndicator/LoadingIndicator';
-import ErrorToast from './ErrorToast/ErrorToast';
-import pixelDistance from '@/utils/storage/pixelDistance';
 import defaults from '@/utils/constants/defaults';
+import getVisibleTextOnScreen from '@/utils/domUtils';
 import bubbleColors from '@/utils/storage/bubbleColors';
 import maxNumberOfCharacters from '@/utils/storage/maxNumberOfCharacters';
+import pixelDistance from '@/utils/storage/pixelDistance';
+import Entity from '@/utils/types/Entity';
+import { ActionIcon } from '@mantine/core';
+import { IconRefresh, IconX } from '@tabler/icons-react';
+import { useEffect, useState } from 'react';
+import EntityBubble from './EntityBubble/EntityBubble';
+import EntityModal from './EntityModal/EntityModal';
+import ErrorToast from './ErrorToast/ErrorToast';
+import LoadingIndicator from './LoadingIndicator/LoadingIndicator';
 import ParentBubble from './ParentBubble/ParentBubble';
+import bubblePosition from '@/utils/storage/bubblePosition';
+import bubbleDistance from '@/utils/storage/bubbleDistance';
+import BubblePositionEnum from '@/utils/types/bubblePositionEnum';
 
 const BubblesContainer = () => {
     const [entities, setEntities] = useState([]);
@@ -25,6 +27,8 @@ const BubblesContainer = () => {
     const [showBubbles, setShowBubbles] = useState(true);
     const [entityColors, setEntityColors] = useState(defaults.colorSettings);
     const [numberOfCharacters, setNumberOfCharacters] = useState(defaults.maxCharacters);
+    const [getBubblePosition, setBubblePosition] = useState(defaults.position);
+    const [bubbleDistanceValue, setBubbleDistance] = useState(defaults.bubbleDistance);
 
     // Send text to background script for processing
     const processText = (text: string) => {
@@ -49,25 +53,29 @@ const BubblesContainer = () => {
     };
 
     useEffect(() => {
-        // Load scroll threshold on component mount
-        const loadScrollThreshold = async () => {
+        // Load settings on component mount
+        const loadSettings = async () => {
             try {
-                const threshold = await pixelDistance.getValue();
-                setScrollThreshold(threshold);
-
-                const colors = await bubbleColors.getValue();
-                setEntityColors(colors);
-
-                const characters = await maxNumberOfCharacters.getValue();
-                setNumberOfCharacters(characters);
-            } catch (error) {
+                const [threshold, colors, characters, position] = await Promise.all([
+                    pixelDistance.getValue(),
+                    bubbleColors.getValue(),
+                    maxNumberOfCharacters.getValue(),
+                    bubblePosition.getValue()
+                ]);
+                setScrollThreshold(threshold ?? defaults.scrollThreshold);
+                setEntityColors(colors ?? defaults.colorSettings);
+                setNumberOfCharacters(characters ?? defaults.maxCharacters);
+                setBubblePosition(position ?? defaults.position);
+                setBubbleDistance(bubbleDistanceValue ?? defaults.bubbleDistance);
+            } catch {
                 setScrollThreshold(defaults.scrollThreshold);
                 setEntityColors(defaults.colorSettings);
                 setNumberOfCharacters(defaults.maxCharacters);
+                setBubblePosition(defaults.position);
+                setBubbleDistance(defaults.bubbleDistance);
             }
         };
-
-        loadScrollThreshold();
+        loadSettings();
 
         // Initial text extraction
         const initialText = getVisibleTextOnScreen();
@@ -92,8 +100,13 @@ const BubblesContainer = () => {
         };
 
         browser.runtime.onMessage.addListener(messageListener);
+    }, []);
 
-        // Scroll listener with debouncing
+    useEffect(() => {
+        if (!showBubbles) {
+            return;
+        }
+
         let lastScrollY = window.scrollY;
         let scrollTimeout: any = null;
 
@@ -104,9 +117,6 @@ const BubblesContainer = () => {
                 if (Math.abs(currentScrollY - lastScrollY) >= scrollThreshold) {
                     lastScrollY = currentScrollY;
                     console.log("Significant scroll detected. Re-extracting text.");
-                    if (!showBubbles) {
-                        return;
-                    }
                     const newText = getVisibleTextOnScreen();
                     processText(newText);
                 }
@@ -115,13 +125,11 @@ const BubblesContainer = () => {
 
         window.addEventListener('scroll', handleScroll);
 
-        // Cleanup
         return () => {
-            browser.runtime.onMessage.removeListener(messageListener);
             window.removeEventListener('scroll', handleScroll);
             if (scrollTimeout) clearTimeout(scrollTimeout);
         };
-    }, []);
+    }, [scrollThreshold, showBubbles]);
 
     const onReload = () => {
         console.log("Reloading entity bubbles...");
@@ -145,7 +153,14 @@ const BubblesContainer = () => {
 
     return (
         <>
-            {showBubbles && !isLoading && <div id="entity-bubbles-container">
+            {showBubbles && !isLoading && <div id="entity-bubbles-container"
+                style={{
+                    top: getBubblePosition === BubblePositionEnum.TopRight || getBubblePosition === BubblePositionEnum.TopLeft ? bubbleDistanceValue : 'auto',
+                    bottom: getBubblePosition === BubblePositionEnum.BottomRight || getBubblePosition === BubblePositionEnum.BottomLeft ? bubbleDistanceValue : 'auto',
+                    left: getBubblePosition === BubblePositionEnum.TopLeft || getBubblePosition === BubblePositionEnum.BottomLeft ? bubbleDistanceValue : 'auto',
+                    right: getBubblePosition === BubblePositionEnum.TopRight || getBubblePosition === BubblePositionEnum.BottomRight ? bubbleDistanceValue : 'auto',
+                }}
+            >
                 {entities.map((entity, index) => (
                     <EntityBubble
                         key={index}
@@ -181,11 +196,13 @@ const BubblesContainer = () => {
                 <ParentBubble
                     setShowBubbles={setShowBubbles}
                     BubblesIcon={BubblesIcon}
+                    bubblePosition={getBubblePosition}
+                    bubbleDistance={bubbleDistanceValue}
                 />
             )}
 
             {isLoading && (
-                <LoadingIndicator />
+                <LoadingIndicator bubblePosition={getBubblePosition} bubbleDistance={bubbleDistanceValue} />
             )}
 
             <EntityModal
