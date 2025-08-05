@@ -13,6 +13,7 @@ import pixelDistance from '@/utils/storage/pixelDistance';
 import defaults from '@/utils/constants/defaults';
 import bubbleColors from '@/utils/storage/bubbleColors';
 import maxNumberOfCharacters from '@/utils/storage/maxNumberOfCharacters';
+import ParentBubble from './ParentBubble/ParentBubble';
 
 const BubblesContainer = () => {
     const [entities, setEntities] = useState([]);
@@ -177,19 +178,10 @@ const BubblesContainer = () => {
             </div>}
 
             {!showBubbles && (
-                <div style={{
-                    position: 'fixed',
-                    top: '20px',
-                    right: '20px',
-                    zIndex: 1000
-                }}>
-                    <CustomCircularButton
-                        onClick={() => setShowBubbles(true)}
-                        aria-label="Show bubbles"
-                    >
-                        <img src={BubblesIcon} alt="" />
-                    </CustomCircularButton>
-                </div>
+                <ParentBubble
+                    setShowBubbles={setShowBubbles}
+                    BubblesIcon={BubblesIcon}
+                />
             )}
 
             {isLoading && (
