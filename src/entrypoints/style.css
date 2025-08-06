@@ -24,15 +24,3 @@
 .mantine-Popover-dropdown {
   border: 1px solid black
 }
-
-@keyframes slideDown {
-  from {
-    transform: translate(-50%, -100%);
-    opacity: 0;
-  }
-
-  to {
-    transform: translate(-50%, 0);
-    opacity: 1;
-  }
-}

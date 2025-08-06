@@ -53,20 +53,20 @@ const BubblesContainer = () => {
     };
 
     useEffect(() => {
-        // Load settings on component mount
         const loadSettings = async () => {
             try {
-                const [threshold, colors, characters, position] = await Promise.all([
+                const [threshold, colors, characters, position, distance] = await Promise.all([
                     pixelDistance.getValue(),
                     bubbleColors.getValue(),
                     maxNumberOfCharacters.getValue(),
-                    bubblePosition.getValue()
+                    bubblePosition.getValue(),
+                    bubbleDistance.getValue()
                 ]);
                 setScrollThreshold(threshold ?? defaults.scrollThreshold);
                 setEntityColors(colors ?? defaults.colorSettings);
                 setNumberOfCharacters(characters ?? defaults.maxCharacters);
                 setBubblePosition(position ?? defaults.position);
-                setBubbleDistance(bubbleDistanceValue ?? defaults.bubbleDistance);
+                setBubbleDistance(distance ?? defaults.bubbleDistance);
             } catch {
                 setScrollThreshold(defaults.scrollThreshold);
                 setEntityColors(defaults.colorSettings);
@@ -77,11 +77,9 @@ const BubblesContainer = () => {
         };
         loadSettings();
 
-        // Initial text extraction
         const initialText = getVisibleTextOnScreen();
         processText(initialText);
 
-        // Listen for entities from background script
         const messageListener = (
             request: any,
             sender: any,
@@ -89,17 +87,40 @@ const BubblesContainer = () => {
         ) => {
             if (request.entities) {
                 setEntities(request.entities.nodes || []);
-                setError(null); // Clear any previous errors
+                setError(null);
                 setLoading(false);
             }
             if (request.error) {
                 setError(request.error);
-                // Auto-hide error after 10 seconds
                 setTimeout(() => setError(null), 10000);
             }
         };
 
         browser.runtime.onMessage.addListener(messageListener);
+
+        // Storage change listener to reload settings when they change
+        const handleStorageChange = (changes: any) => {
+            if (changes.pixelDistance || changes.bubbleColors || 
+                changes.maxNumberOfCharacters || changes.bubblePosition 
+                || changes.bubbleDistance) {
+                console.log('Settings changed, reloading...');
+                loadSettings();
+
+                // If max characters changed, re-process current text
+                if (changes.maxNumberOfCharacters) {
+                    const newText = getVisibleTextOnScreen();
+                    processText(newText);
+                }
+            }
+        };
+
+        browser.storage.onChanged.addListener(handleStorageChange);
+
+        // Cleanup
+        return () => {
+            browser.runtime.onMessage.removeListener(messageListener);
+            browser.storage.onChanged.removeListener(handleStorageChange);
+        };
     }, []);
 
     useEffect(() => {

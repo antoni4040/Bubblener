@@ -1,6 +1,5 @@
 import Entity from "@/utils/types/Entity";
-import styles from "./EntityModal.module.css";
-import { Badge, MantineGradient } from "@mantine/core";
+import { Badge, Modal, Text, Stack, Title } from "@mantine/core";
 import EntityColors from "@/utils/types/EntityColors";
 
 type EntityModalProps = {
@@ -11,7 +10,7 @@ type EntityModalProps = {
 };
 
 const EntityModal = ({ entity, colors, isOpen, onClose }: EntityModalProps) => {
-    if (!isOpen || !entity) return null;
+    if (!entity) return null;
 
     const getEntityColor = (entityType: string) => {
         switch (entityType) {
@@ -44,26 +43,48 @@ const EntityModal = ({ entity, colors, isOpen, onClose }: EntityModalProps) => {
     };
 
     return (
-        <div
-            className={styles.entityModal}
-            style={{ display: 'block' }}
-            onClick={() => onClose()}
+        <Modal
+            opened={isOpen}
+            onClose={onClose}
+            size="lg"
+            centered
+            radius={'lg'}
+            withinPortal={false}
+            style={{ zIndex: 1000 }}
+            withCloseButton={false}
+            overlayProps={{
+                backgroundOpacity: 0.55,
+                blur: 3,
+            }}
         >
-            <div className={styles.modalContent}>
-                <span className={styles.closeButton} onClick={onClose}>&times;</span>
-                <h2 className={styles.modalTitle}>{entity.entity_name}</h2>
-                <Badge size='lg' variant="gradient" gradient={getEntityGradient(entity.entity_type)} style={{
-                    marginBottom: '8px', color: getEntityColor(entity.entity_type)
-                }}>
+            <Stack gap="md">
+                <Title order={2} size="xl" fw={600}>
+                    {entity.entity_name}
+                </Title>
+                <Badge
+                    size="lg"
+                    variant="gradient"
+                    gradient={getEntityGradient(entity.entity_type)}
+                    style={{ color: getEntityColor(entity.entity_type) }}
+                >
                     {entity.entity_type}
                 </Badge>
-                <p className={styles.modalSummary}>{entity.summary_from_text}</p>
-                {entity.contextual_enrichment && <p className={styles.modalContextualEnrichment}>
-                    {entity.contextual_enrichment}
-                </p>}
-                <p style={{ marginTop: '1rem', color: '#818181' }}>Please note: The information provided by AI may not always be accurate or complete.</p>
-            </div>
-        </div>
+
+                <Text size="lg" c="black">
+                    {entity.summary_from_text}
+                </Text>
+
+                {entity.contextual_enrichment && (
+                    <Text size="md" c="#404040">
+                        {entity.contextual_enrichment}
+                    </Text>
+                )}
+
+                <Text size="sm" c="gray.6" mt="md">
+                    Please note: The information provided by AI may not always be accurate or complete.
+                </Text>
+            </Stack>
+        </Modal>
     );
 };
 
