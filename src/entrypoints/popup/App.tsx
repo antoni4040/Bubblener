@@ -1,21 +1,23 @@
-import { BubblePositionEnum } from '@/utils/types/bubblePositionEnum';
+import BubblePositionEnum from '@/utils/types/bubblePositionEnum';
 import bubbleColors from '@/utils/storage/bubbleColors';
 import bubblePosition from '@/utils/storage/bubblePosition';
 import maxNumberOfCharacters from '@/utils/storage/maxNumberOfCharacters';
 import { ActionIcon, Button, Combobox, Group, Image, Input, InputBase, NumberInput, PasswordInput, Stack, Text, Title, useCombobox } from '@mantine/core';
 import { IconDeviceFloppy, IconRestore, IconRotateClockwise } from '@tabler/icons-react';
 import { useEffect, useState } from 'react';
-import EntityColorSection from '../../components/EntityColorSection/EntityColorSection';
-import defaults from '../../utils/constants/defaults';
-import geminiApiKey from '../../utils/storage/geminiApiKey';
-import maxNumberOfElements from '../../utils/storage/maxNumberOfElements';
-import pixelDistance from '../../utils/storage/pixelDistance';
+import EntityColorSection from '@/components/EntityColorSection/EntityColorSection';
+import defaults from '@/utils/constants/defaults';
+import apiKey from '@/utils/storage/apiKey';
+import maxNumberOfElements from '@/utils/storage/maxNumberOfElements';
+import pixelDistance from '@/utils/storage/pixelDistance';
 import bubbleDistance from '@/utils/storage/bubbleDistance';
+import modelAPI from '@/utils/storage/modelAPI';
+import modelAPIsEnum from '@/utils/types/modelAPIsEnum';
 import './App.css';
 import bubblenerLogo from '/icon-128.png';
 
 function App() {
-  const [apiKey, setApiKey] = useState('');
+  const [getApiKey, setApiKey] = useState('');
   const [pixels, setPixels] = useState(defaults.scrollThreshold);
   const [status, setStatus] = useState('');
   const [numberOfCharacters, setNumberOfCharacters] = useState(defaults.maxCharacters);
@@ -51,6 +53,7 @@ function App() {
   });
   const [bubblePositionSetting, setBubblePositionSetting] = useState<BubblePositionEnum>(defaults.position);
   const [getBubbleDistance, setBubbleDistance] = useState(defaults.bubbleDistance);
+  const [getModelAPI, setModelAPI] = useState(defaults.modelAPI);
 
   useEffect(() => {
     async function loadSettings() {
@@ -61,15 +64,17 @@ function App() {
         savedEntityColors,
         savedNumberOfCharacters,
         savedBubblePosition,
-        savedBubbleDistance
+        savedBubbleDistance,
+        savedModelAPI
       ] = await Promise.all([
-        geminiApiKey.getValue(),
+        apiKey.getValue(),
         pixelDistance.getValue(),
         maxNumberOfElements.getValue(),
         bubbleColors.getValue(),
         maxNumberOfCharacters.getValue(),
         bubblePosition.getValue(),
-        bubbleDistance.getValue()
+        bubbleDistance.getValue(),
+        modelAPI.getValue()
       ]);
 
       setApiKey(savedApiKey || '');
@@ -79,6 +84,7 @@ function App() {
       setNumberOfCharacters(savedNumberOfCharacters || defaults.maxCharacters);
       setBubblePositionSetting(savedBubblePosition || defaults.position);
       setBubbleDistance(savedBubbleDistance || defaults.bubbleDistance);
+      setModelAPI(savedModelAPI || defaults.modelAPI);
     }
     loadSettings();
   }, []);
@@ -86,13 +92,14 @@ function App() {
   const handleSave = async () => {
     try {
       await Promise.all([
-        geminiApiKey.setValue(apiKey),
+        apiKey.setValue(getApiKey),
         pixelDistance.setValue(pixels),
         maxNumberOfElements.setValue(maxElements),
         bubbleColors.setValue(colorSettings),
         maxNumberOfCharacters.setValue(numberOfCharacters),
         bubblePosition.setValue(bubblePositionSetting),
-        bubbleDistance.setValue(getBubbleDistance)
+        bubbleDistance.setValue(getBubbleDistance),
+        modelAPI.setValue(getModelAPI)
       ]);
       setStatus('Settings saved successfully!');
       setStatusType('success');
@@ -168,9 +175,19 @@ function App() {
     onDropdownClose: () => positionCombobox.resetSelectedOption(),
   });
 
+  const modelCombobox = useCombobox({
+    onDropdownClose: () => modelCombobox.resetSelectedOption(),
+  });
+
   const positionOptions = Object.values(BubblePositionEnum).map(pos => (
     <Combobox.Option key={pos} value={pos}>
       {pos}
+    </Combobox.Option>
+  ));
+
+  const modelOptions = Object.values(modelAPIsEnum).map(api => (
+    <Combobox.Option key={api} value={api}>
+      {api}
     </Combobox.Option>
   ));
 
@@ -203,15 +220,46 @@ function App() {
       </Group>
 
       <Input.Wrapper
-        label="Gemini API Key"
+        label="Model API"
+        description="Select the model API you want to use."
+      >
+        <Combobox
+          store={modelCombobox}
+          onOptionSubmit={(val) => {
+            setModelAPI(val as modelAPIsEnum);
+            modelCombobox.closeDropdown();
+          }}
+        >
+          <Combobox.Target>
+            <InputBase
+              component="button"
+              type="button"
+              pointer
+              rightSection={<Combobox.Chevron />}
+              rightSectionPointerEvents="none"
+              onClick={() => modelCombobox.toggleDropdown()}
+              style={{ flex: 1 }}
+            >
+              {getModelAPI || <Input.Placeholder>Pick a model</Input.Placeholder>}
+            </InputBase>
+          </Combobox.Target>
+
+          <Combobox.Dropdown>
+            <Combobox.Options>{modelOptions}</Combobox.Options>
+          </Combobox.Dropdown>
+        </Combobox>
+      </Input.Wrapper>
+
+      <Input.Wrapper
+        label="API Key"
         description="Your key is stored locally."
       >
         <Group gap="xs">
           <PasswordInput
             id="apiKey"
-            value={apiKey}
+            value={getApiKey}
             onChange={(e) => setApiKey(e.target.value)}
-            placeholder="Enter your Gemini API Key"
+            placeholder="Enter your API Key for your chosen service."
             style={{ flex: 1 }}
           />
           <ActionIcon

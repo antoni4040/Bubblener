@@ -1,6 +1,8 @@
-import createAPIRequest from '../utils/promptUtils';
-import geminiApiKey from '../utils/storage/geminiApiKey';
-import maxNumberOfElements from '../utils/storage/maxNumberOfElements';
+import { GeminiAPIRequest, ChatGPTAPIRequest, DeepSeekAPIRequest } from '@/utils/promptUtils';
+import apiKey from '@/utils/storage/apiKey';
+import modelAPI from '@/utils/storage/modelAPI';
+import maxNumberOfElements from '@/utils/storage/maxNumberOfElements';
+import ModelAPIsEnum from '@/utils/types/modelAPIsEnum';
 
 export default defineBackground(() => {
   // Track which tabs have the extension activated
@@ -79,33 +81,51 @@ export default defineBackground(() => {
     console.log('Received text from activated content script. Processing...');
 
     // Use the imported storage item to get the key
-    const apiKey = await geminiApiKey.getValue();
-    if (!apiKey) {
-      console.error('Gemini API Key not found. Please set it in the extension options.');
+    const currentApiKey = await apiKey.getValue();
+    if (!currentApiKey) {
+      console.error('API Key not found. Please set it in the extension options.');
       // Notify the user
       browser.notifications.create({
         type: 'basic',
         iconUrl: browser.runtime.getURL('/icon-128.png'),
         title: 'API Key Missing',
-        message: 'Please set your Google Gemini API key in the extension options page.',
+        message: 'Please set your API key in the extension options page.',
       });
       return;
     }
 
-    const maxElements = await maxNumberOfElements.getValue() || 12;
+    const maxElements = await maxNumberOfElements.getValue();
+    const currentModelAPI = await modelAPI.getValue();
     try {
-      const response = await createAPIRequest(request.text, maxElements, apiKey);
-
-      let entitiesText = response.text;
-      console.log('Gemini API Response:', entitiesText);
+      let response: string | undefined;
+      if (currentModelAPI === ModelAPIsEnum.ChatGPT) {
+        console.log('Using ChatGPT API for entity detection.');
+        response = await ChatGPTAPIRequest(request.text, maxElements, currentApiKey);
+      } else if (currentModelAPI === ModelAPIsEnum.Gemini) {
+        console.log('Using Gemini API for entity detection.');
+        response = await GeminiAPIRequest(request.text, maxElements, currentApiKey);
+      } else if (currentModelAPI === ModelAPIsEnum.DeepSeek) {
+        console.log('Using DeepSeek API for entity detection.');
+        response = await DeepSeekAPIRequest(request.text, maxElements, currentApiKey);
+      } 
       
-      if (typeof entitiesText !== 'string') {
-        throw new Error('No response text received from Gemini API.');
+      if (typeof response !== 'string') {
+        throw new Error('No response text received from API.');
       }
 
-      const entities = JSON.parse(entitiesText);
+      if (response.startsWith('```json')) {
+        response = response.slice(7, -3);
+      }
+      let entities = JSON.parse(response);
+      if (!Array.isArray(entities)) {
+        if (entities.entities) {
+          entities = entities.entities;
+        } else {
+          throw new Error('Invalid response format: expected an array of entities.');
+        }
+      }
+      console.log('Entities detected:', entities);
 
-      // Send the parsed entities back to the content script
       if (sender.tab?.id) {
         await browser.tabs.sendMessage(sender.tab.id, {
           entities: { nodes: entities, links: [] },
@@ -113,13 +133,11 @@ export default defineBackground(() => {
         console.log('Entities sent to content script.');
       }
     } catch (error: any) {
-      console.error('Error calling Gemini API or processing response:', error);
+      console.error('Error calling API or processing response:', error);
 
-      // Simple error handling - just show the error message
       let errorMessage = 'An unknown error occurred while processing entities.';
       if (error?.message) {
         try {
-          // Try to parse the error message as JSON (for API errors)
           const errorObj = JSON.parse(error.message);
           if (errorObj?.error?.message) {
             errorMessage = errorObj.error.message;
@@ -127,12 +145,10 @@ export default defineBackground(() => {
             errorMessage = error.message;
           }
         } catch (parseError) {
-          // If parsing fails, use the original error message
           errorMessage = error.message;
         }
       }
 
-      // Send error message to content script
       if (sender.tab?.id) {
         try {
           await browser.tabs.sendMessage(sender.tab.id, {

@@ -1,7 +1,8 @@
-import BubblePositionEnum from "../types/bubblePositionEnum";
+import BubblePositionEnum from "@/utils/types/bubblePositionEnum";
+import defaults from "../constants/defaults";
 
 const bubblePosition = storage.defineItem<BubblePositionEnum>('local:bubblePosition', {
-    defaultValue: BubblePositionEnum.TopRight,
+    defaultValue: defaults.position,
 });
 
 export default bubblePosition;

@@ -1,6 +1,8 @@
-import BubblePositionEnum from "../types/bubblePositionEnum";
+import BubblePositionEnum from "@/utils/types/bubblePositionEnum";
+import modelAPIsEnum from "@/utils/types/modelAPIsEnum";
 
 const defaults = {
+    modelAPI: modelAPIsEnum.Gemini,
     apiKey: '',
     scrollThreshold: 1000,
     maxCharacters: 16000,
