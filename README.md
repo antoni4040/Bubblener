@@ -1,8 +1,14 @@
+![Logo](public/icon-128.png)
 # Bubblener
 
 Bubblener is a browser extension that leverages LLMs to perform Named-Entity Recognition (NER) on any webpage. It identifies key entities like people, organizations, locations, and concepts, presenting them as interactive, color-coded "bubbles" for easy exploration and contextual understanding.
 
-Built with React + WXT.
+![preview_a](public/bubblener_01.png)
+![preview_b](public/bubblener_02.png)
+
+Built with React + WXT + Mantine.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Features
 
