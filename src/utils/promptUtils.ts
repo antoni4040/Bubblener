@@ -83,10 +83,10 @@ export const GeminiAPIRequest = async (text: string, maxElements: number, apiKey
 }
 
 export const ChatGPTAPIRequest = async (text: string, maxElements: number, apiKey: string): Promise<string> => {
-    const openai = new OpenAI({ apiKey });
+    const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
 
     const response = await openai.responses.parse({
-        model: "gpt-4.1-nano",
+        model: "gpt-5-nano",
         input: [
             {
                 role: "system",
@@ -100,6 +100,9 @@ export const ChatGPTAPIRequest = async (text: string, maxElements: number, apiKe
         text: {
             format: zodTextFormat(EntitiesSchema, "entities"),
         },
+        reasoning: {
+            effort: "minimal"
+        }
     });
 
     return response.output_text ?? "";
@@ -108,7 +111,8 @@ export const ChatGPTAPIRequest = async (text: string, maxElements: number, apiKe
 export const DeepSeekAPIRequest = async (text: string, maxElements: number, apiKey: string): Promise<string> => {
     const openai = new OpenAI({
         baseURL: 'https://api.deepseek.com',
-        apiKey: apiKey
+        apiKey: apiKey,
+        dangerouslyAllowBrowser: true
     });
 
     const response = await openai.chat.completions.create({

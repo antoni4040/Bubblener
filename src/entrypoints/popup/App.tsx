@@ -455,6 +455,10 @@ function App() {
         />
       </Stack>
 
+      {status && (
+        <Text c={statusType === 'success' ? 'green' : 'red'} size="sm" ta="center">{status}</Text>
+      )}
+
       <Group justify="space-between" mt="md" align="center">
         <Button
           onClick={handleSave}
@@ -472,10 +476,6 @@ function App() {
           Reset All
         </Button>
       </Group>
-
-      {status && (
-        <Text c={statusType === 'success' ? 'green' : 'red'} size="sm" ta="center">{status}</Text>
-      )}
     </Stack>
   );
 }

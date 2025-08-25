@@ -10,21 +10,60 @@ export default defineBackground(() => {
 
   // Function to activate content script
   const activateContentScript = async (tab: any) => {
-    if (!tab.id) return;
+    // Validate tab exists and has valid ID
+    if (!tab || !tab.id || tab.id === -1) {
+      console.log('Invalid tab - cannot activate content script');
+      return;
+    }
+
+    // Check if URL is supported
+    if (tab.url) {
+      const url = new URL(tab.url);
+
+      // Skip unsupported pages
+      if (
+        tab.url.endsWith('.pdf') ||
+        url.protocol === 'chrome:' ||
+        url.protocol === 'chrome-extension:' ||
+        url.protocol === 'moz-extension:' ||
+        url.protocol === 'about:' ||
+        url.protocol === 'file:'
+      ) {
+        console.log(`Cannot activate on ${url.protocol} or PDF pages`);
+
+        browser.notifications.create({
+          type: 'basic',
+          iconUrl: browser.runtime.getURL('/icon-128.png'),
+          title: 'Bubblener Not Supported',
+          message: 'Bubblener cannot be activated on this type of page.',
+        });
+        return;
+      }
+    }
 
     try {
       // Add tab to activated set
       activatedTabs.add(tab.id);
 
-      // Inject content script if not already injected
-      await browser.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ['content-scripts/content.js'] // Adjust path as needed
-      });
+      // Use appropriate script injection method
+      if (browser.scripting?.executeScript) {
+        // Manifest V3 method (Chrome, newer Firefox)
+        await browser.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: ['content-scripts/content.js']
+        });
+      } else if (browser.tabs?.executeScript) {
+        // Manifest V2 method (Firefox, older Chrome)
+        await browser.tabs.executeScript(tab.id, {
+          file: 'content-scripts/content.js'
+        });
+      } else {
+        throw new Error('No script injection method available');
+      }
 
       console.log(`Content script activated for tab ${tab.id}`);
 
-      // Optionally notify user of activation
+      // Notify user of activation
       browser.notifications.create({
         type: 'basic',
         iconUrl: browser.runtime.getURL('/icon-128.png'),
@@ -33,15 +72,34 @@ export default defineBackground(() => {
       });
     } catch (error) {
       console.error('Error activating content script:', error);
+
+      // Show error notification to user
+      browser.notifications.create({
+        type: 'basic',
+        iconUrl: browser.runtime.getURL('/icon-128.png'),
+        title: 'Activation Failed',
+        message: 'Could not activate Bubblener on this page.',
+      });
     }
   };
 
   // Handle browser action click
-  browser.action.onClicked.addListener(async (tab) => {
+  const handleBrowserActionClick = async (tab: any) => {
     if (tab) {
       await activateContentScript(tab);
     }
-  });
+  };
+
+  // Use the appropriate API based on what's available
+  if (browser.action) {
+    // Manifest V3 (Chrome, newer Firefox)
+    browser.action.onClicked.addListener(handleBrowserActionClick);
+  } else if (browser.browserAction) {
+    // Manifest V2 (Firefox, older Chrome)
+    browser.browserAction.onClicked.addListener(handleBrowserActionClick);
+  } else {
+    console.error('Neither browser.action nor browser.browserAction is available.');
+  }
 
   // Handle context menu click
   browser.contextMenus.onClicked.addListener(async (info, tab) => {
@@ -107,8 +165,8 @@ export default defineBackground(() => {
       } else if (currentModelAPI === ModelAPIsEnum.DeepSeek) {
         console.log('Using DeepSeek API for entity detection.');
         response = await DeepSeekAPIRequest(request.text, maxElements, currentApiKey);
-      } 
-      
+      }
+
       if (typeof response !== 'string') {
         throw new Error('No response text received from API.');
       }
