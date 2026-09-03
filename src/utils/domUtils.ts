@@ -22,44 +22,57 @@ export const getContentRoot = (): HTMLElement => {
   return document.body;
 };
 
+// Block-level text carriers. Deliberately no `a`/`span`: they are inline, so
+// their text already appears in the enclosing block, and including them
+// duplicated every link and flooded the request with navigation chrome.
+const BLOCK_SELECTOR = [
+  'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+  'li', 'blockquote', 'td', 'th', 'dd', 'dt', 'figcaption', 'pre',
+].join(', ');
+
+const intersectsViewport = (element: Element): boolean => {
+  const style = window.getComputedStyle(element);
+  if (style.visibility === 'hidden' || style.display === 'none') return false;
+
+  const rect = element.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return false;
+
+  return (
+    rect.top < window.innerHeight &&
+    rect.bottom >= 0 &&
+    rect.left < window.innerWidth &&
+    rect.right >= 0
+  );
+};
+
+/** True when an enclosing block inside `root` already carries this text. */
+const isNestedBlock = (element: Element, root: HTMLElement): boolean => {
+  const ancestor = element.parentElement?.closest(BLOCK_SELECTOR);
+  return !!ancestor && ancestor !== root && root.contains(ancestor);
+};
+
+/**
+ * The text currently on screen, within the page's main content container.
+ *
+ * Both halves matter. The priority selectors pick *where* to read, keeping
+ * navigation and sidebars out; the viewport filter picks *what* to read, so
+ * scrolling through a long article yields the section actually being read
+ * rather than re-sending the whole thing.
+ */
 const getVisibleTextOnScreen = (): string => {
-  // 1. Prioritized Content Extraction
-  for (const selector of prioritySelectors) {
-    const mainContentElement = document.querySelector(selector) as HTMLElement | null;
+  const root = getContentRoot();
 
-    // If a priority element is found, use its text and stop.
-    if (mainContentElement) {
-      console.log(`Content extracted using priority selector: "${selector}"`);
-      return mainContentElement.innerText;
-    }
-  }
+  const visible = Array.from(root.querySelectorAll(BLOCK_SELECTOR))
+    .filter((element) => !isNestedBlock(element, root))
+    .filter(intersectsViewport)
+    .map((element) => (element as HTMLElement).innerText?.trim() ?? '')
+    .filter(Boolean);
 
-  // 2. Fallback: Generic Text Extraction (your original logic)
-  // This runs only if no priority containers are found.
-  console.log("No priority selector found. Falling back to generic text extraction.");
-  const elements = document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, a, span, td');
-  let visibleText = '';
+  if (visible.length) return visible.join('\n');
 
-  elements.forEach(element => {
-    const rect = element.getBoundingClientRect();
-    const style = window.getComputedStyle(element);
-
-    const isVisible = (
-      style.visibility !== 'hidden' &&
-      style.display !== 'none' &&
-      rect.width > 0 && rect.height > 0 && // Element must have dimensions
-      rect.top < window.innerHeight &&
-      rect.bottom >= 0 &&
-      rect.left < window.innerWidth &&
-      rect.right >= 0
-    );
-
-    if (isVisible) {
-      visibleText += (element as HTMLElement).innerText + '\n';
-    }
-  });
-
-  return visibleText;
+  // No measurable blocks — a root holding bare text, or a layout we can't
+  // measure. Reading the root whole is better than sending nothing.
+  return root.innerText ?? '';
 };
 
 export default getVisibleTextOnScreen;

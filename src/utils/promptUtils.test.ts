@@ -37,7 +37,7 @@ beforeEach(() => {
 
 describe('GeminiAPIRequest', () => {
     it('sends the page text as content and a maxElements-aware system instruction', async () => {
-        generateContentMock.mockResolvedValue({ text: '[]' });
+        generateContentMock.mockResolvedValue({ text: '[]', usageMetadata: { promptTokenCount: 120, candidatesTokenCount: 45 } });
 
         const result = await GeminiAPIRequest('page text', 5, 'gemini-key');
 
@@ -46,18 +46,19 @@ describe('GeminiAPIRequest', () => {
         expect(call.contents).toBe('page text');
         expect(call.config.systemInstruction).toContain('up to 5');
         expect(call.config.responseSchema.type).toBe('ARRAY');
-        expect(result).toBe('[]');
+        expect(result.text).toBe('[]');
+        expect(result.usage).toEqual({ input: 120, output: 45 });
     });
 
     it('returns an empty string when the API responds with no text', async () => {
         generateContentMock.mockResolvedValue({});
-        expect(await GeminiAPIRequest('text', 5, 'key')).toBe('');
+        expect((await GeminiAPIRequest('text', 5, 'key')).text).toBe('');
     });
 });
 
 describe('ChatGPTAPIRequest', () => {
     it('sends system + user messages and returns output_text', async () => {
-        responsesParseMock.mockResolvedValue({ output_text: '{"entities":[]}' });
+        responsesParseMock.mockResolvedValue({ output_text: '{"entities":[]}', usage: { input_tokens: 300, output_tokens: 80 } });
 
         const result = await ChatGPTAPIRequest('page text', 8, 'gpt-key');
 
@@ -67,7 +68,8 @@ describe('ChatGPTAPIRequest', () => {
         expect(call.input[0]).toMatchObject({ role: 'system' });
         expect(call.input[0].content).toContain('up to 8');
         expect(call.input[1]).toMatchObject({ role: 'user', content: 'page text' });
-        expect(result).toBe('{"entities":[]}');
+        expect(result.text).toBe('{"entities":[]}');
+        expect(result.usage).toEqual({ input: 300, output: 80 });
     });
 
     it("does not embed a manual OUTPUT FORMAT block (schema is enforced separately)", async () => {
@@ -82,6 +84,7 @@ describe('DeepSeekAPIRequest', () => {
     it('targets the DeepSeek base URL and returns the completion content', async () => {
         chatCompletionsCreateMock.mockResolvedValue({
             choices: [{ message: { content: '{"entities":[]}' } }],
+            usage: { prompt_tokens: 210, completion_tokens: 60 },
         });
 
         const result = await DeepSeekAPIRequest('page text', 3, 'ds-key');
@@ -92,7 +95,12 @@ describe('DeepSeekAPIRequest', () => {
         const call = chatCompletionsCreateMock.mock.calls[0][0];
         expect(call.model).toBe('deepseek-chat');
         expect(call.messages[1]).toMatchObject({ role: 'user', content: 'page text' });
-        expect(result).toBe('{"entities":[]}');
+        // DeepSeek has no schema enforcement, so JSON mode and an output cap
+        // large enough to avoid truncation are what keep responses parseable.
+        expect(call.response_format).toEqual({ type: 'json_object' });
+        expect(call.max_tokens).toBeGreaterThanOrEqual(8192);
+        expect(result.text).toBe('{"entities":[]}');
+        expect(result.usage).toEqual({ input: 210, output: 60 });
     });
 
     it('embeds an explicit OUTPUT FORMAT block, unlike the schema-enforced providers', async () => {
@@ -100,10 +108,12 @@ describe('DeepSeekAPIRequest', () => {
         await DeepSeekAPIRequest('text', 5, 'key');
         const systemPrompt = chatCompletionsCreateMock.mock.calls[0][0].messages[0].content;
         expect(systemPrompt).toContain('OUTPUT FORMAT');
+        // DeepSeek's JSON mode requires the literal word "json" in the prompt.
+        expect(systemPrompt).toContain('json');
     });
 
     it('returns an empty string when no choices are returned', async () => {
         chatCompletionsCreateMock.mockResolvedValue({ choices: [] });
-        expect(await DeepSeekAPIRequest('text', 5, 'key')).toBe('');
+        expect((await DeepSeekAPIRequest('text', 5, 'key')).text).toBe('');
     });
 });

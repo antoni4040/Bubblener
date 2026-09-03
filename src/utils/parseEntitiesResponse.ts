@@ -18,6 +18,41 @@ const stripCodeFence = (text: string): string => {
     return fenced ? fenced[1].trim() : text.trim();
 };
 
+// Trailing commas are the most common way an LLM hands back JSON that is
+// nearly valid ("...}, ]"). Only applied after a strict parse has already
+// failed, so well-formed output is never rewritten. Commas inside strings are
+// skipped by tracking whether we're in one.
+const dropTrailingCommas = (json: string): string => {
+    let out = '';
+    let inString = false;
+    let escaped = false;
+
+    for (let i = 0; i < json.length; i++) {
+        const char = json[i];
+
+        if (inString) {
+            out += char;
+            if (escaped) escaped = false;
+            else if (char === '\\') escaped = true;
+            else if (char === '"') inString = false;
+            continue;
+        }
+
+        if (char === '"') {
+            inString = true;
+            out += char;
+            continue;
+        }
+
+        if (char === ',') {
+            const next = json.slice(i + 1).match(/^\s*([}\]])/);
+            if (next) continue; // comma immediately before a closing bracket
+        }
+        out += char;
+    }
+    return out;
+};
+
 export const parseEntitiesResponse = (raw: string): Entity[] => {
     const cleaned = stripCodeFence(raw);
 
@@ -25,7 +60,13 @@ export const parseEntitiesResponse = (raw: string): Entity[] => {
     try {
         parsed = JSON.parse(cleaned);
     } catch (error) {
-        throw new Error(`Failed to parse entities response as JSON: ${(error as Error).message}`);
+        try {
+            parsed = JSON.parse(dropTrailingCommas(cleaned));
+        } catch {
+            // Report the original failure, not the repaired one — it points at
+            // what the model actually sent.
+            throw new Error(`Failed to parse entities response as JSON: ${(error as Error).message}`);
+        }
     }
 
     const candidate = Array.isArray(parsed)

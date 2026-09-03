@@ -60,6 +60,21 @@ describe('parseEntitiesResponse', () => {
         expect(() => parseEntitiesResponse(raw)).toThrow(/Invalid entity shape/);
     });
 
+    it('recovers from a trailing comma before a closing brace or bracket', () => {
+        const raw = `{"entities":[${JSON.stringify(validEntity).replace(/}$/, ',}')},]}`;
+        expect(parseEntitiesResponse(raw)).toEqual([validEntity]);
+    });
+
+    it('does not mangle a comma that legitimately appears inside a string', () => {
+        const entity = { ...validEntity, description: 'Trailing text, ] and , } inside a string.' };
+        expect(parseEntitiesResponse(JSON.stringify([entity]))).toEqual([entity]);
+    });
+
+    it('still throws when the payload is broken beyond a trailing comma', () => {
+        expect(() => parseEntitiesResponse('{"entities": [ { entity_name: Acme } ]}'))
+            .toThrow(/Failed to parse entities response as JSON/);
+    });
+
     it('returns an empty array when given an empty JSON array', () => {
         expect(parseEntitiesResponse('[]')).toEqual([]);
     });

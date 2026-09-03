@@ -1,5 +1,7 @@
 import { GeminiAPIRequest, ChatGPTAPIRequest, DeepSeekAPIRequest } from '@/utils/promptUtils';
 import parseEntitiesResponse from '@/utils/parseEntitiesResponse';
+import tokenUsage from '@/utils/storage/tokenUsage';
+import type { ProviderResponse } from '@/utils/promptUtils';
 import apiKey from '@/utils/storage/apiKey';
 import modelAPI from '@/utils/storage/modelAPI';
 import maxNumberOfElements from '@/utils/storage/maxNumberOfElements';
@@ -161,7 +163,7 @@ export default defineBackground(() => {
     const maxElements = await maxNumberOfElements.getValue();
     const currentModelAPI = await modelAPI.getValue();
     try {
-      let response: string | undefined;
+      let response: ProviderResponse | undefined;
       if (currentModelAPI === ModelAPIsEnum.ChatGPT) {
         console.log('Using ChatGPT API for entity detection.');
         response = await ChatGPTAPIRequest(request.text, maxElements, currentApiKey);
@@ -173,16 +175,26 @@ export default defineBackground(() => {
         response = await DeepSeekAPIRequest(request.text, maxElements, currentApiKey);
       }
 
-      if (typeof response !== 'string') {
+      if (!response) {
         throw new Error('No response text received from API.');
       }
 
-      const entities = parseEntitiesResponse(response);
+      const entities = parseEntitiesResponse(response.text);
       console.log('Entities detected:', entities);
+
+      // Running total across every page, so the popup can show what the
+      // user's own key has actually been spent on.
+      const totals = await tokenUsage.getValue();
+      await tokenUsage.setValue({
+        input: totals.input + response.usage.input,
+        output: totals.output + response.usage.output,
+        calls: totals.calls + 1,
+      });
 
       if (sender.tab?.id) {
         await browser.tabs.sendMessage(sender.tab.id, {
           entities: { nodes: entities, links: [] },
+          usage: response.usage,
         });
         console.log('Entities sent to content script.');
       }

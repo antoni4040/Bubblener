@@ -18,6 +18,8 @@ import themeStorage from '@/utils/storage/theme';
 import bubbleSize from '@/utils/storage/bubbleSize';
 import bubbleTransparency from '@/utils/storage/bubbleTransparency';
 import textHighlighting from '@/utils/storage/textHighlighting';
+import tokenUsage from '@/utils/storage/tokenUsage';
+import formatTokens from '@/utils/formatTokens';
 import ThemeEnum from '@/utils/types/themeEnum';
 import './App.css';
 import bubblenerLogo from '/icon-128.png';
@@ -75,6 +77,7 @@ function App({ onThemeChange }: AppProps = {}) {
   const [getBubbleSize, setBubbleSize] = useState(defaults.bubbleSize);
   const [isTransparent, setTransparent] = useState(defaults.bubbleTransparency);
   const [highlightsOn, setHighlightsOn] = useState(defaults.textHighlighting);
+  const [usage, setUsage] = useState({ input: 0, output: 0, calls: 0 });
 
   useEffect(() => {
     async function loadSettings() {
@@ -90,7 +93,8 @@ function App({ onThemeChange }: AppProps = {}) {
         savedTheme,
         savedBubbleSize,
         savedTransparency,
-        savedHighlighting
+        savedHighlighting,
+        savedUsage
       ] = await Promise.all([
         apiKey.getValue(),
         pixelDistance.getValue(),
@@ -103,7 +107,8 @@ function App({ onThemeChange }: AppProps = {}) {
         themeStorage.getValue(),
         bubbleSize.getValue(),
         bubbleTransparency.getValue(),
-        textHighlighting.getValue()
+        textHighlighting.getValue(),
+        tokenUsage.getValue()
       ]);
 
       setHasApiKey(!!savedApiKey);
@@ -118,6 +123,7 @@ function App({ onThemeChange }: AppProps = {}) {
       setBubbleSize(savedBubbleSize || defaults.bubbleSize);
       setTransparent(savedTransparency ?? defaults.bubbleTransparency);
       setHighlightsOn(savedHighlighting ?? defaults.textHighlighting);
+      setUsage(savedUsage ?? { input: 0, output: 0, calls: 0 });
     }
     loadSettings();
   }, []);
@@ -254,6 +260,12 @@ function App({ onThemeChange }: AppProps = {}) {
 
   const handleResetBubbleDistance = () => {
     setBubbleDistance(defaults.bubbleDistance);
+  };
+
+  const handleResetUsage = async () => {
+    // Applied immediately rather than staged: this is a counter, not a setting.
+    await tokenUsage.setValue({ input: 0, output: 0, calls: 0 });
+    setUsage({ input: 0, output: 0, calls: 0 });
   };
 
   const handleResetBubbleSize = () => {
@@ -662,6 +674,26 @@ function App({ onThemeChange }: AppProps = {}) {
           onResetEntityColors={resetEntityColors}
         />
       </Stack>
+
+      <Input.Wrapper
+        label="Token Usage"
+        description="Totals for your own API key, across every page since the last reset."
+      >
+        <Group gap="xs" align="center">
+          <Text size="sm" style={{ flex: 1 }}>
+            ↑ {formatTokens(usage.input)} in &nbsp;·&nbsp; ↓ {formatTokens(usage.output)} out
+            &nbsp;·&nbsp; {usage.calls} {usage.calls === 1 ? 'request' : 'requests'}
+          </Text>
+          <ActionIcon
+            variant="light"
+            color="gray"
+            onClick={handleResetUsage}
+            title="Reset Token Usage"
+          >
+            <IconRotateClockwise size={16} />
+          </ActionIcon>
+        </Group>
+      </Input.Wrapper>
 
       {status && (
         <Text c={statusType === 'success' ? 'green' : 'red'} size="sm" ta="center">{status}</Text>

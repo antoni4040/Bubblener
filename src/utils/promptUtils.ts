@@ -2,6 +2,14 @@ import { GoogleGenAI, Type } from '@google/genai';
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import EntitiesSchema from "@/utils/types/EntitiesSchema";
+import TokenUsage from "@/utils/types/TokenUsage";
+
+export interface ProviderResponse {
+    text: string;
+    usage: TokenUsage;
+}
+
+const NO_USAGE: TokenUsage = { input: 0, output: 0 };
 
 const createPrompt = (maxElements: number, withJson: boolean): string => {
     const prompt = `# ROLE:
@@ -22,6 +30,8 @@ const createPrompt = (maxElements: number, withJson: boolean): string => {
     if (withJson) {
         return `${prompt}
         # OUTPUT FORMAT:
+        Respond with a single json object, and nothing else — no prose, no code
+        fences, no trailing commas. It must match this shape exactly:
         {
             "entities": [
                 {
@@ -39,7 +49,7 @@ const createPrompt = (maxElements: number, withJson: boolean): string => {
     return prompt;
 }
 
-export const GeminiAPIRequest = async (text: string, maxElements: number, apiKey: string): Promise<string> => {
+export const GeminiAPIRequest = async (text: string, maxElements: number, apiKey: string): Promise<ProviderResponse> => {
     const genAI = new GoogleGenAI({ apiKey });
     const response = await genAI.models.generateContent({
         model: "gemini-2.5-flash-lite",
@@ -79,10 +89,16 @@ export const GeminiAPIRequest = async (text: string, maxElements: number, apiKey
         }
     });
 
-    return response.text ?? "";
+    return {
+        text: response.text ?? "",
+        usage: {
+            input: response.usageMetadata?.promptTokenCount ?? 0,
+            output: response.usageMetadata?.candidatesTokenCount ?? 0,
+        },
+    };
 }
 
-export const ChatGPTAPIRequest = async (text: string, maxElements: number, apiKey: string): Promise<string> => {
+export const ChatGPTAPIRequest = async (text: string, maxElements: number, apiKey: string): Promise<ProviderResponse> => {
     const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
 
     const response = await openai.responses.parse({
@@ -105,10 +121,16 @@ export const ChatGPTAPIRequest = async (text: string, maxElements: number, apiKe
         }
     });
 
-    return response.output_text ?? "";
+    return {
+        text: response.output_text ?? "",
+        usage: {
+            input: response.usage?.input_tokens ?? 0,
+            output: response.usage?.output_tokens ?? 0,
+        },
+    };
 };
 
-export const DeepSeekAPIRequest = async (text: string, maxElements: number, apiKey: string): Promise<string> => {
+export const DeepSeekAPIRequest = async (text: string, maxElements: number, apiKey: string): Promise<ProviderResponse> => {
     const openai = new OpenAI({
         baseURL: 'https://api.deepseek.com',
         apiKey: apiKey,
@@ -119,7 +141,19 @@ export const DeepSeekAPIRequest = async (text: string, maxElements: number, apiK
         messages: [{ role: "system", content: createPrompt(maxElements, true) },
         { role: "user", content: text }],
         model: "deepseek-chat",
+        // DeepSeek is the one provider without schema-enforced output, so ask
+        // for JSON mode explicitly rather than trusting the prompt alone.
+        response_format: { type: 'json_object' },
+        // The default output cap truncates mid-object once maxElements grows,
+        // and a truncated object is invalid JSON.
+        max_tokens: 8192,
     });
 
-    return response.choices[0]?.message.content ?? "";
+    return {
+        text: response.choices[0]?.message.content ?? "",
+        usage: {
+            input: response.usage?.prompt_tokens ?? 0,
+            output: response.usage?.completion_tokens ?? 0,
+        },
+    };
 };

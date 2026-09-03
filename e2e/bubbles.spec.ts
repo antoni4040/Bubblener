@@ -130,3 +130,89 @@ test('applies the selected theme to bubble colors and the accent gradient', asyn
     await expect(page.getByText(TEST_ENTITY.summary_from_text))
         .toHaveCSS('color', 'rgb(117, 207, 135)');
 });
+
+const activateOn = async (
+    { context, background }: { context: any; background: any },
+    url: string,
+    body: string,
+) => {
+    await context.route(url, (route: any) =>
+        route.fulfill({ contentType: 'text/html', body }));
+    await background.evaluate(() =>
+        chrome.storage.local.set({ apiKey: 'test-key', modelAPI: 'DeepSeek' }));
+
+    const page = await context.newPage();
+    await page.goto(url);
+    const tabId = await background.evaluate(async (target: string) => {
+        const tabs = await chrome.tabs.query({ url: target });
+        return tabs[0]?.id as number;
+    }, url);
+    await background.evaluate(
+        ({ id, target }: { id: number; target: string }) =>
+            (self as any).__bubblenerTestActivate({ id, url: target }),
+        { id: tabId as number, target: url }
+    );
+    await page.locator('#entity-bubbles-container').waitFor();
+    return page;
+};
+
+const recordPayloads = async (context: any) => {
+    const payloads: string[] = [];
+    await context.route(DEEPSEEK_URL, (route: any) => {
+        payloads.push(route.request().postData() || '');
+        return route.fulfill({
+            json: { choices: [{ message: { content: JSON.stringify({ entities: [TEST_ENTITY] }) } }] },
+        });
+    });
+    return payloads;
+};
+
+test('scrolling analyses the section being read, not the whole article', async ({ context, background }) => {
+    const URL = 'https://example.com/long';
+    const sections = Array.from({ length: 60 }, (_, i) =>
+        `<h2>Section ${i + 1}</h2><p>In section ${i + 1}, Acme Corporation met delegation ${i + 1}, ` +
+        `and the discussion continued at length before the room emptied again.</p>`
+    ).join('');
+
+    const payloads = await recordPayloads(context);
+    const page = await activateOn({ context, background }, URL,
+        `<!DOCTYPE html><html><body style="font-size:18px;line-height:1.8">
+         <nav><p>Home | About | Subscribe</p></nav>
+         <article><h1>Long</h1>${sections}</article></body></html>`);
+
+    await expect.poll(() => payloads.length).toBe(1);
+    for (let i = 0; i < 3; i++) {
+        await page.mouse.wheel(0, 1600);
+        await page.waitForTimeout(900);
+    }
+
+    const sent = payloads.map((p) => JSON.parse(p).messages[1].content as string);
+
+    // Every request carries different content — the part actually on screen.
+    expect(new Set(sent).size).toBe(sent.length);
+    expect(sent.length).toBeGreaterThan(1);
+
+    // ...which is a small slice, not the whole article, and excludes the nav.
+    for (const text of sent) {
+        expect(text.length).toBeLessThan(3000);
+        expect(text).not.toContain('Subscribe');
+    }
+});
+
+test('unchanged visible text is not re-sent', async ({ context, background }) => {
+    // One block taller than the viewport: scrolling keeps the same element on
+    // screen, so the extracted text is identical and must not be re-requested.
+    const URL = 'https://example.com/tall';
+    const payloads = await recordPayloads(context);
+    const page = await activateOn({ context, background }, URL,
+        `<!DOCTYPE html><html><body>
+         <article><p style="height:6000px">Acme Corporation fills the whole page.</p></article>
+         </body></html>`);
+
+    await expect.poll(() => payloads.length).toBe(1);
+    for (let i = 0; i < 3; i++) {
+        await page.mouse.wheel(0, 1600);
+        await page.waitForTimeout(900);
+    }
+    expect(payloads).toHaveLength(1);
+});

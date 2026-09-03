@@ -12,6 +12,8 @@ import bubbleSize from '@/utils/storage/bubbleSize';
 import bubbleTransparency from '@/utils/storage/bubbleTransparency';
 import textHighlighting from '@/utils/storage/textHighlighting';
 import Entity from '@/utils/types/Entity';
+import TokenUsage from '@/utils/types/TokenUsage';
+import formatTokens from '@/utils/formatTokens';
 import { ActionIcon, useMantineColorScheme } from '@mantine/core';
 import { IconRefresh, IconX } from '@tabler/icons-react';
 import { CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
@@ -41,15 +43,18 @@ const BubblesContainer = () => {
     const [isTransparent, setTransparent] = useState(defaults.bubbleTransparency);
     const [showHighlights, setShowHighlights] = useState(defaults.textHighlighting);
     const [mentions, setMentions] = useState<Range[][]>([]);
+    // What this page has cost so far, accumulated across scroll re-analyses.
+    const [sessionUsage, setSessionUsage] = useState<TokenUsage>({ input: 0, output: 0 });
     // Two independent hover sources — the bubble and the word in the page.
     // Kept apart so leaving one doesn't clear a focus the other still holds.
     const [bubbleFocus, setBubbleFocus] = useState<number | null>(null);
     const [mentionFocus, setMentionFocus] = useState<number | null>(null);
     const bubblesRef = useRef<HTMLDivElement | null>(null);
+    const lastSentTextRef = useRef<string | null>(null);
     const { setColorScheme } = useMantineColorScheme();
 
     // Send text to background script for processing
-    const processText = (text: string) => {
+    const processText = (text: string, force = false) => {
         if (!showBubbles) {
             return;
         }
@@ -59,6 +64,15 @@ const BubblesContainer = () => {
             text = text.substring(0, maxTextLength);
             console.log(`Text truncated to ${maxTextLength} characters.`);
         }
+
+        // Identical input yields an identical answer, so sending it again just
+        // spends the user's own tokens. Scrolling a page whose content sits in
+        // an <article> re-extracts the very same text every time.
+        if (!force && text === lastSentTextRef.current) {
+            console.log('Text unchanged since the last request — skipping.');
+            return;
+        }
+        lastSentTextRef.current = text;
 
         setLoading(true);
         browser.runtime.sendMessage({ text })
@@ -121,6 +135,12 @@ const BubblesContainer = () => {
                 setEntities(request.entities.nodes || []);
                 setError(null);
                 setLoading(false);
+            }
+            if (request.usage) {
+                setSessionUsage(previous => ({
+                    input: previous.input + (request.usage.input || 0),
+                    output: previous.output + (request.usage.output || 0),
+                }));
             }
             if (request.error) {
                 setError(request.error);
@@ -211,8 +231,8 @@ const BubblesContainer = () => {
 
     const onReload = () => {
         console.log("Reloading entity bubbles...");
-        const newText = getVisibleTextOnScreen();
-        processText(newText);
+        // Explicit reload always re-asks, even for unchanged text.
+        processText(getVisibleTextOnScreen(), true);
     }
 
     const handleEntityClick = (entity: Entity) => {
@@ -316,7 +336,23 @@ const BubblesContainer = () => {
                         onHoverChange={handleBubbleHover(index)}
                     />
                 ))}
-                <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: isLeftAligned ? 'flex-start' : 'flex-end' }}>
+                    {sessionUsage.input > 0 && (
+                        <span
+                            title={`This page so far: ${sessionUsage.input} input + ${sessionUsage.output} output tokens`}
+                            style={{
+                                pointerEvents: 'auto',
+                                marginRight: '8px',
+                                fontFamily: preset.fontFamily,
+                                fontSize: 'calc(var(--bn-bubble-size, 13px) * 0.8)',
+                                color: preset.surfaceMuted,
+                                whiteSpace: 'nowrap',
+                            }}
+                        >
+                            ↑{formatTokens(sessionUsage.input)} ↓{formatTokens(sessionUsage.output)}
+                        </span>
+                    )}
+
                     <ActionIcon
                         variant="default"
                         size="sm"
