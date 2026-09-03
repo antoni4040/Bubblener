@@ -1,15 +1,20 @@
 import BubblesIcon from '@/assets/icon.svg';
 import defaults from '@/utils/constants/defaults';
 import themes from '@/utils/constants/themes';
-import getVisibleTextOnScreen from '@/utils/domUtils';
+import getVisibleTextOnScreen, { getContentRoot } from '@/utils/domUtils';
+import findMentions from '@/utils/findMentions';
+import HighlightOverlay from './HighlightOverlay/HighlightOverlay';
 import bubbleColors from '@/utils/storage/bubbleColors';
 import maxNumberOfCharacters from '@/utils/storage/maxNumberOfCharacters';
 import pixelDistance from '@/utils/storage/pixelDistance';
 import themeStorage from '@/utils/storage/theme';
+import bubbleSize from '@/utils/storage/bubbleSize';
+import bubbleTransparency from '@/utils/storage/bubbleTransparency';
+import textHighlighting from '@/utils/storage/textHighlighting';
 import Entity from '@/utils/types/Entity';
 import { ActionIcon, useMantineColorScheme } from '@mantine/core';
 import { IconRefresh, IconX } from '@tabler/icons-react';
-import { CSSProperties, useEffect, useState } from 'react';
+import { CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
 import EntityBubble from './EntityBubble/EntityBubble';
 import EntityModal from './EntityModal/EntityModal';
 import ErrorToast from './ErrorToast/ErrorToast';
@@ -32,6 +37,15 @@ const BubblesContainer = () => {
     const [getBubblePosition, setBubblePosition] = useState(defaults.position);
     const [bubbleDistanceValue, setBubbleDistance] = useState(defaults.bubbleDistance);
     const [activeTheme, setActiveTheme] = useState(defaults.theme);
+    const [bubbleSizeValue, setBubbleSize] = useState(defaults.bubbleSize);
+    const [isTransparent, setTransparent] = useState(defaults.bubbleTransparency);
+    const [showHighlights, setShowHighlights] = useState(defaults.textHighlighting);
+    const [mentions, setMentions] = useState<Range[][]>([]);
+    // Two independent hover sources — the bubble and the word in the page.
+    // Kept apart so leaving one doesn't clear a focus the other still holds.
+    const [bubbleFocus, setBubbleFocus] = useState<number | null>(null);
+    const [mentionFocus, setMentionFocus] = useState<number | null>(null);
+    const bubblesRef = useRef<HTMLDivElement | null>(null);
     const { setColorScheme } = useMantineColorScheme();
 
     // Send text to background script for processing
@@ -59,13 +73,16 @@ const BubblesContainer = () => {
     useEffect(() => {
         const loadSettings = async () => {
             try {
-                const [threshold, colors, characters, position, distance, selectedTheme] = await Promise.all([
+                const [threshold, colors, characters, position, distance, selectedTheme, size, transparent, highlights] = await Promise.all([
                     pixelDistance.getValue(),
                     bubbleColors.getValue(),
                     maxNumberOfCharacters.getValue(),
                     bubblePosition.getValue(),
                     bubbleDistance.getValue(),
-                    themeStorage.getValue()
+                    themeStorage.getValue(),
+                    bubbleSize.getValue(),
+                    bubbleTransparency.getValue(),
+                    textHighlighting.getValue()
                 ]);
                 setScrollThreshold(threshold ?? defaults.scrollThreshold);
                 setEntityColors(colors ?? defaults.colorSettings);
@@ -74,6 +91,9 @@ const BubblesContainer = () => {
                 setBubbleDistance(distance ?? defaults.bubbleDistance);
                 setActiveTheme(selectedTheme ?? defaults.theme);
                 setColorScheme(themes[selectedTheme ?? defaults.theme].colorScheme);
+                setBubbleSize(size ?? defaults.bubbleSize);
+                setTransparent(transparent ?? defaults.bubbleTransparency);
+                setShowHighlights(highlights ?? defaults.textHighlighting);
             } catch {
                 setScrollThreshold(defaults.scrollThreshold);
                 setEntityColors(defaults.colorSettings);
@@ -82,6 +102,9 @@ const BubblesContainer = () => {
                 setBubbleDistance(defaults.bubbleDistance);
                 setActiveTheme(defaults.theme);
                 setColorScheme(themes[defaults.theme].colorScheme);
+                setBubbleSize(defaults.bubbleSize);
+                setTransparent(defaults.bubbleTransparency);
+                setShowHighlights(defaults.textHighlighting);
             }
         };
         loadSettings();
@@ -111,7 +134,8 @@ const BubblesContainer = () => {
         const handleStorageChange = (changes: any) => {
             if (changes.pixelDistance || changes.bubbleColors ||
                 changes.maxNumberOfCharacters || changes.bubblePosition
-                || changes.bubbleDistance || changes.theme) {
+                || changes.bubbleDistance || changes.theme || changes.bubbleSize
+                || changes.bubbleTransparency || changes.textHighlighting) {
                 console.log('Settings changed, reloading...');
                 loadSettings();
 
@@ -161,6 +185,30 @@ const BubblesContainer = () => {
         };
     }, [scrollThreshold, showBubbles]);
 
+    // Locate each entity in the page. Only re-runs when the entity set
+    // changes — scrolling moves the rects, not the ranges.
+    useEffect(() => {
+        if (!entities.length) {
+            setMentions([]);
+            return;
+        }
+        const terms = entities.map((entity: Entity) => [entity.entity_name]);
+        setMentions(findMentions(getContentRoot(), terms));
+    }, [entities]);
+
+    const focused = bubbleFocus ?? mentionFocus;
+
+    const handleBubbleHover = (index: number) => (hovered: boolean) => {
+        setBubbleFocus(hovered ? index : null);
+    };
+
+    // Read live rather than caching: the bubbles move with the position and
+    // distance settings, and the overlay re-measures on every scroll frame.
+    const getBubbleRect = useCallback((index: number) => {
+        const element = bubblesRef.current?.querySelector(`[data-entity-index="${index}"]`);
+        return element ? element.getBoundingClientRect() : null;
+    }, []);
+
     const onReload = () => {
         console.log("Reloading entity bubbles...");
         const newText = getVisibleTextOnScreen();
@@ -209,12 +257,18 @@ const BubblesContainer = () => {
         '--mantine-font-family-headings': preset.fontFamily,
         '--mantine-color-text': preset.surfaceText,
         '--mantine-color-dimmed': preset.surfaceMuted,
+        '--bn-bubble-size': `${bubbleSizeValue}px`,
+        '--bn-bubble-rest-opacity': isTransparent ? '0.55' : '1',
         fontFamily: preset.fontFamily,
     } as CSSProperties;
+
+    const isLeftAligned = getBubblePosition === BubblePositionEnum.TopLeft
+        || getBubblePosition === BubblePositionEnum.BottomLeft;
 
     // The reload/hide controls share the loading indicator's surface so they
     // read as part of the theme rather than stock Mantine circles.
     const controlStyle: CSSProperties = {
+        pointerEvents: 'auto',
         borderRadius: preset.controlRadius === '50%' ? '50%' : preset.surfaceRadius,
         backgroundColor: preset.surfaceBackground,
         borderColor: preset.surfaceBorder,
@@ -224,41 +278,63 @@ const BubblesContainer = () => {
 
     return (
         <div style={themeVars}>
+            {/* Unmounted while the modal is open: the overlay sits at the top
+                of the stacking context, so its marks would paint over the
+                modal's own text. */}
+            {showBubbles && showHighlights && !isModalOpen && (
+                <HighlightOverlay
+                    entities={entities}
+                    mentions={mentions}
+                    colors={entityColors}
+                    focused={focused}
+                    getBubbleRect={getBubbleRect}
+                    onMentionFocus={setMentionFocus}
+                />
+            )}
+
             {showBubbles && !isLoading && <div id="entity-bubbles-container"
+                ref={bubblesRef}
                 style={{
                     top: getBubblePosition === BubblePositionEnum.TopRight || getBubblePosition === BubblePositionEnum.TopLeft ? bubbleDistanceValue : 'auto',
                     bottom: getBubblePosition === BubblePositionEnum.BottomRight || getBubblePosition === BubblePositionEnum.BottomLeft ? bubbleDistanceValue : 'auto',
                     left: getBubblePosition === BubblePositionEnum.TopLeft || getBubblePosition === BubblePositionEnum.BottomLeft ? bubbleDistanceValue : 'auto',
                     right: getBubblePosition === BubblePositionEnum.TopRight || getBubblePosition === BubblePositionEnum.BottomRight ? bubbleDistanceValue : 'auto',
+                    // Hug the screen edge so each bubble is only as wide as its
+                    // own name, rather than stretching to the longest one.
+                    alignItems: isLeftAligned ? 'flex-start' : 'flex-end',
                 }}
             >
                 {entities.map((entity, index) => (
                     <EntityBubble
                         key={index}
+                        index={index}
                         entity={entity}
                         colors={entityColors}
+                        highlighted={mentionFocus === index}
+                        quiet={isModalOpen}
                         onEntityClick={handleEntityClick}
+                        onHoverChange={handleBubbleHover(index)}
                     />
                 ))}
                 <div>
                     <ActionIcon
                         variant="default"
-                        size="lg"
+                        size="sm"
                         aria-label="Reload bubbles"
-                        style={{ ...controlStyle, marginRight: '8px', marginLeft: '2rem' }}
+                        style={{ ...controlStyle, marginRight: '6px' }}
                         onClick={() => onReload()}
                     >
-                        <IconRefresh size={18} />
+                        <IconRefresh size={15} />
                     </ActionIcon>
 
                     <ActionIcon
                         variant="default"
-                        size="lg"
+                        size="sm"
                         aria-label="Hide bubbles"
                         onClick={() => setShowBubbles(false)}
                         style={{ ...controlStyle, color: preset.dangerColor }}
                     >
-                        <IconX size={18} />
+                        <IconX size={15} />
                     </ActionIcon>
                 </div>
             </div>}

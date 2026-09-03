@@ -17,7 +17,7 @@ const entity: Entity = {
 describe('EntityBubble', () => {
     it('renders the entity name', () => {
         renderWithMantine(
-            <EntityBubble entity={entity} colors={defaults.colorSettings} onEntityClick={() => {}} />
+            <EntityBubble index={0} entity={entity} colors={defaults.colorSettings} onEntityClick={() => {}} />
         );
         expect(screen.getByText('Acme Corporation')).toBeInTheDocument();
     });
@@ -25,7 +25,7 @@ describe('EntityBubble', () => {
     it('calls onEntityClick with the entity when clicked', async () => {
         const onEntityClick = vi.fn();
         renderWithMantine(
-            <EntityBubble entity={entity} colors={defaults.colorSettings} onEntityClick={onEntityClick} />
+            <EntityBubble index={0} entity={entity} colors={defaults.colorSettings} onEntityClick={onEntityClick} />
         );
 
         await userEvent.click(screen.getByText('Acme Corporation'));

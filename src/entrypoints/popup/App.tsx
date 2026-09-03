@@ -2,7 +2,7 @@ import BubblePositionEnum from '@/utils/types/bubblePositionEnum';
 import bubbleColors from '@/utils/storage/bubbleColors';
 import bubblePosition from '@/utils/storage/bubblePosition';
 import maxNumberOfCharacters from '@/utils/storage/maxNumberOfCharacters';
-import { ActionIcon, Button, Combobox, Group, Image, Input, InputBase, NumberInput, PasswordInput, Stack, Text, Title, useCombobox } from '@mantine/core';
+import { ActionIcon, Button, Combobox, Group, Image, Input, InputBase, NumberInput, PasswordInput, Stack, Switch, Text, Title, useCombobox } from '@mantine/core';
 import { IconDeviceFloppy, IconRestore, IconRotateClockwise } from '@tabler/icons-react';
 import { useEffect, useState } from 'react';
 import EntityColorSection from '@/components/EntityColorSection/EntityColorSection';
@@ -15,6 +15,9 @@ import bubbleDistance from '@/utils/storage/bubbleDistance';
 import modelAPI from '@/utils/storage/modelAPI';
 import modelAPIsEnum from '@/utils/types/modelAPIsEnum';
 import themeStorage from '@/utils/storage/theme';
+import bubbleSize from '@/utils/storage/bubbleSize';
+import bubbleTransparency from '@/utils/storage/bubbleTransparency';
+import textHighlighting from '@/utils/storage/textHighlighting';
 import ThemeEnum from '@/utils/types/themeEnum';
 import './App.css';
 import bubblenerLogo from '/icon-128.png';
@@ -69,6 +72,9 @@ function App({ onThemeChange }: AppProps = {}) {
   const [getBubbleDistance, setBubbleDistance] = useState(defaults.bubbleDistance);
   const [getModelAPI, setModelAPI] = useState(defaults.modelAPI);
   const [selectedTheme, setSelectedTheme] = useState<ThemeEnum>(defaults.theme);
+  const [getBubbleSize, setBubbleSize] = useState(defaults.bubbleSize);
+  const [isTransparent, setTransparent] = useState(defaults.bubbleTransparency);
+  const [highlightsOn, setHighlightsOn] = useState(defaults.textHighlighting);
 
   useEffect(() => {
     async function loadSettings() {
@@ -81,7 +87,10 @@ function App({ onThemeChange }: AppProps = {}) {
         savedBubblePosition,
         savedBubbleDistance,
         savedModelAPI,
-        savedTheme
+        savedTheme,
+        savedBubbleSize,
+        savedTransparency,
+        savedHighlighting
       ] = await Promise.all([
         apiKey.getValue(),
         pixelDistance.getValue(),
@@ -91,7 +100,10 @@ function App({ onThemeChange }: AppProps = {}) {
         bubblePosition.getValue(),
         bubbleDistance.getValue(),
         modelAPI.getValue(),
-        themeStorage.getValue()
+        themeStorage.getValue(),
+        bubbleSize.getValue(),
+        bubbleTransparency.getValue(),
+        textHighlighting.getValue()
       ]);
 
       setHasApiKey(!!savedApiKey);
@@ -103,6 +115,9 @@ function App({ onThemeChange }: AppProps = {}) {
       setSelectedTheme(savedTheme || defaults.theme);
       setBubbleDistance(savedBubbleDistance || defaults.bubbleDistance);
       setModelAPI(savedModelAPI || defaults.modelAPI);
+      setBubbleSize(savedBubbleSize || defaults.bubbleSize);
+      setTransparent(savedTransparency ?? defaults.bubbleTransparency);
+      setHighlightsOn(savedHighlighting ?? defaults.textHighlighting);
     }
     loadSettings();
   }, []);
@@ -137,7 +152,10 @@ function App({ onThemeChange }: AppProps = {}) {
         bubblePosition.setValue(bubblePositionSetting),
         bubbleDistance.setValue(getBubbleDistance),
         modelAPI.setValue(getModelAPI),
-        themeStorage.setValue(selectedTheme)
+        themeStorage.setValue(selectedTheme),
+        bubbleSize.setValue(getBubbleSize),
+        bubbleTransparency.setValue(isTransparent),
+        textHighlighting.setValue(highlightsOn)
       ];
       // Only touch the stored key if the user actually typed a replacement
       // or explicitly reset it — otherwise an unrelated settings save would
@@ -174,6 +192,9 @@ function App({ onThemeChange }: AppProps = {}) {
       setBubblePositionSetting(defaults.position);
       setBubbleDistance(defaults.bubbleDistance);
       setSelectedTheme(defaults.theme);
+      setBubbleSize(defaults.bubbleSize);
+      setTransparent(defaults.bubbleTransparency);
+      setHighlightsOn(defaults.textHighlighting);
 
       // Save default values to storage
       await Promise.all([
@@ -183,7 +204,10 @@ function App({ onThemeChange }: AppProps = {}) {
         maxNumberOfCharacters.setValue(defaults.maxCharacters),
         bubblePosition.setValue(defaults.position),
         bubbleDistance.setValue(defaults.bubbleDistance),
-        themeStorage.setValue(defaults.theme)
+        themeStorage.setValue(defaults.theme),
+        bubbleSize.setValue(defaults.bubbleSize),
+        bubbleTransparency.setValue(defaults.bubbleTransparency),
+        textHighlighting.setValue(defaults.textHighlighting)
       ]);
 
       setStatus('All settings reset to defaults!');
@@ -230,6 +254,10 @@ function App({ onThemeChange }: AppProps = {}) {
 
   const handleResetBubbleDistance = () => {
     setBubbleDistance(defaults.bubbleDistance);
+  };
+
+  const handleResetBubbleSize = () => {
+    setBubbleSize(defaults.bubbleSize);
   };
 
   const toggleSection = (section: keyof typeof openSections) => {
@@ -552,6 +580,45 @@ function App({ onThemeChange }: AppProps = {}) {
           </ActionIcon>
         </Group>
       </Input.Wrapper>
+
+      <Input.Wrapper
+        label="Bubble Size"
+        description="Text size of the bubbles; padding scales with it."
+      >
+        <Group gap="xs">
+          <NumberInput
+            value={getBubbleSize}
+            onChange={(value) => setBubbleSize(Number(value))}
+            placeholder={defaults.bubbleSize.toString()}
+            min={9}
+            max={24}
+            suffix='px'
+            style={{ flex: 1 }}
+          />
+          <ActionIcon
+            variant="light"
+            color="gray"
+            onClick={handleResetBubbleSize}
+            title="Reset Bubble Size"
+          >
+            <IconRotateClockwise size={16} />
+          </ActionIcon>
+        </Group>
+      </Input.Wrapper>
+
+      <Switch
+        checked={isTransparent}
+        onChange={(event) => setTransparent(event.currentTarget.checked)}
+        label="Fade bubbles when idle"
+        description="Rests the bubbles at partial opacity so page text stays readable; hovering restores them."
+      />
+
+      <Switch
+        checked={highlightsOn}
+        onChange={(event) => setHighlightsOn(event.currentTarget.checked)}
+        label="Highlight entities in the page"
+        description="Underlines each mention, and draws a connecting line to its bubble on hover."
+      />
 
       <Stack gap="md">
         <Title order={4}>Entity Colors</Title>

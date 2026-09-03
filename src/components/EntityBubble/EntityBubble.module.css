@@ -2,11 +2,16 @@
   position: relative;
   color: white;
   font-family: var(--bn-font-family, inherit);
-  padding: 8px 12px;
+  /* The container is click-through; the bubbles themselves are not. */
+  pointer-events: auto;
+  /* em so padding tracks the user's size setting automatically */
+  padding: 0.4em 0.75em;
   border: var(--bn-bubble-border, none);
   border-radius: var(--bn-bubble-radius, 20px);
   cursor: pointer;
-  font-size: 16px;
+  font-size: var(--bn-bubble-size, 13px);
+  line-height: 1.35;
+  opacity: var(--bn-bubble-rest-opacity, 1);
   font-weight: var(--bn-bubble-weight, 500);
   letter-spacing: var(--bn-bubble-tracking, normal);
   text-transform: var(--bn-bubble-transform, none);
@@ -20,10 +25,11 @@
 .entityBubble:hover {
   transform: var(--bn-bubble-hover-lift, translateY(-2px));
   box-shadow: var(--bn-bubble-hover-shadow, 0 4px 12px rgba(0, 0, 0, 0.2));
+  opacity: 1;
 }
 
 .popoverText {
-  font-size: 16px !important;
-  line-height: 1.4;
+  font-size: 14px !important;
+  line-height: 1.45;
   color: var(--bn-surface-text, var(--mantine-color-text));
 }

@@ -15,6 +15,11 @@ const defaults = {
     maxCharacters: 16000,
     maxElements: 8,
     bubbleDistance: 20,
+    bubbleSize: 13,
+    /** Rest the bubbles below full opacity so page text stays readable. */
+    bubbleTransparency: false,
+    /** Mention marks and bubble connector lines drawn over the page. */
+    textHighlighting: true,
     position: BubblePositionEnum.TopRight,
     colorSettings: themes[defaultTheme].colorSettings,
 };

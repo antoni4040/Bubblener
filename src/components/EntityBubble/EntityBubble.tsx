@@ -3,57 +3,55 @@ import { useDisclosure } from '@mantine/hooks';
 import Entity from '../../utils/types/Entity';
 import styles from './EntityBubble.module.css';
 import EntityColors from '@/utils/types/EntityColors';
+import { getEntityGradient, getEntityTextColor } from '@/utils/entityColors';
 
 interface EntityBubbleProps {
     entity: Entity;
+    index: number;
     colors: EntityColors;
+    /** True while the pointer is over one of this entity's mentions in the page. */
+    highlighted?: boolean;
+    /** Suppresses the hover popover, e.g. while the detail modal is open. */
+    quiet?: boolean;
     onEntityClick: (entity: Entity) => void;
+    onHoverChange?: (hovered: boolean) => void;
 }
 
-const EntityBubble = ({ entity, colors, onEntityClick }: EntityBubbleProps) => {
+const EntityBubble = ({
+    entity, index, colors, highlighted = false, quiet = false, onEntityClick, onHoverChange,
+}: EntityBubbleProps) => {
     const [opened, { close, open }] = useDisclosure(false);
 
-    const getEntityGradient = (entityType: string) => {
-        switch (entityType) {
-            case 'Person':
-                return `linear-gradient(135deg, ${colors.person.gradientStart} 0%, ${colors.person.gradientEnd} 100%)`;
-            case 'Organization':
-                return `linear-gradient(135deg, ${colors.organization.gradientStart} 0%, ${colors.organization.gradientEnd} 100%)`;
-            case 'Location':
-                return `linear-gradient(135deg, ${colors.location.gradientStart} 0%, ${colors.location.gradientEnd} 100%)`;
-            case 'Key Concept/Theme':
-                return `linear-gradient(135deg, ${colors.keyConcept.gradientStart} 0%, ${colors.keyConcept.gradientEnd} 100%)`;
-            default:
-                return "linear-gradient(135deg, #8360c3 0%, #2ebf91 100%)";
-        }
-    };
-
-    const getEntityColor = (entityType: string) => {
-        switch (entityType) {
-            case 'Person':
-                return colors.person.textColor;
-            case 'Organization':
-                return colors.organization.textColor;
-            case 'Location':
-                return colors.location.textColor;
-            case 'Key Concept/Theme':
-                return colors.keyConcept.textColor;
-            default:
-                return '#ffffff';
-        }
-    }
+    const gradient = getEntityGradient(entity.entity_type, colors);
+    const textColor = getEntityTextColor(entity.entity_type, colors);
 
     return (
-        <Popover position="bottom" withArrow shadow="md" opened={opened} withinPortal={false}>
+        <Popover position="bottom" withArrow shadow="md" opened={(opened || highlighted) && !quiet} withinPortal={false}>
             <Popover.Target>
                 <div
+                    // The overlay finds this element to anchor connector lines.
+                    data-entity-index={index}
                     className={styles.entityBubble}
                     style={{
-                        background: getEntityGradient(entity.entity_type),
-                        color: getEntityColor(entity.entity_type),
+                        background: gradient,
+                        color: textColor,
+                        // Hovering the word in the page lights up the bubble,
+                        // so the connection reads in both directions.
+                        ...(highlighted ? {
+                            transform: 'var(--bn-bubble-hover-lift, translateY(-2px))',
+                            boxShadow: 'var(--bn-bubble-hover-shadow, 0 4px 12px rgba(0,0,0,0.2))',
+                            filter: 'brightness(1.08)',
+                            opacity: 1,
+                        } : {}),
                     }}
-                    onMouseEnter={open}
-                    onMouseLeave={close}
+                    onMouseEnter={() => {
+                        open();
+                        onHoverChange?.(true);
+                    }}
+                    onMouseLeave={() => {
+                        close();
+                        onHoverChange?.(false);
+                    }}
                     onClick={() => onEntityClick(entity)}
                 >
                     {entity.entity_name}
@@ -70,7 +68,8 @@ const EntityBubble = ({ entity, colors, onEntityClick }: EntityBubbleProps) => {
                 <Badge size='sm' style={{
                     marginBottom: '8px',
                     borderRadius: 'var(--bn-bubble-radius)',
-                    background: getEntityGradient(entity.entity_type), color: getEntityColor(entity.entity_type)
+                    background: gradient,
+                    color: textColor,
                 }}>
                     {entity.entity_type}
                 </Badge>

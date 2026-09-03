@@ -11,14 +11,19 @@
 }
 
 #entity-bubbles-container {
-  display: flex;
   position: fixed;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   z-index: 10000;
-  max-width: 300px;
+  max-width: 240px;
   max-height: 1000px;
+  /*
+   * The container spans the full height of the bubble stack, so leaving it
+   * clickable would swallow every click on the page behind it — including the
+   * gaps between bubbles. Children opt back in individually.
+   */
+  pointer-events: none;
 }
 
 .mantine-Popover-dropdown {

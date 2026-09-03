@@ -1,16 +1,29 @@
+// Look for common main content containers in a preferred order.
+const prioritySelectors = [
+  'article',
+  'main',
+  '[role="main"]',
+  '#content',
+  '#main',
+  '.post-content',
+  '.entry-content'
+];
+
+/**
+ * The element the extracted text came from, or `document.body` when no
+ * priority container matched. Mention highlighting scopes itself to this, so
+ * it never marks up text that was never sent to the model.
+ */
+export const getContentRoot = (): HTMLElement => {
+  for (const selector of prioritySelectors) {
+    const element = document.querySelector(selector) as HTMLElement | null;
+    if (element) return element;
+  }
+  return document.body;
+};
+
 const getVisibleTextOnScreen = (): string => {
   // 1. Prioritized Content Extraction
-  // Look for common main content containers in a preferred order.
-  const prioritySelectors = [
-    'article', 
-    'main', 
-    '[role="main"]', 
-    '#content', 
-    '#main', 
-    '.post-content', 
-    '.entry-content'
-  ];
-
   for (const selector of prioritySelectors) {
     const mainContentElement = document.querySelector(selector) as HTMLElement | null;
 
