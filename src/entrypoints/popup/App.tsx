@@ -17,7 +17,13 @@ import './App.css';
 import bubblenerLogo from '/icon-128.png';
 
 function App() {
-  const [getApiKey, setApiKey] = useState('');
+  // The real API key value is never loaded into state / rendered into the
+  // DOM once saved, so it can't be read via devtools or copy/paste. Only a
+  // freshly-typed replacement (apiKeyDraft) ever appears in the field.
+  const [hasApiKey, setHasApiKey] = useState(false);
+  const [apiKeyDraft, setApiKeyDraft] = useState('');
+  const [apiKeyDirty, setApiKeyDirty] = useState(false);
+  const [apiKeyEditing, setApiKeyEditing] = useState(false);
   const [pixels, setPixels] = useState(defaults.scrollThreshold);
   const [status, setStatus] = useState('');
   const [numberOfCharacters, setNumberOfCharacters] = useState(defaults.maxCharacters);
@@ -77,7 +83,7 @@ function App() {
         modelAPI.getValue()
       ]);
 
-      setApiKey(savedApiKey || '');
+      setHasApiKey(!!savedApiKey);
       setPixels(savedPixels || defaults.scrollThreshold);
       setMaxElements(savedMaxElements || defaults.maxElements);
       setColorSettings(savedEntityColors || defaults.colorSettings);
@@ -91,8 +97,7 @@ function App() {
 
   const handleSave = async () => {
     try {
-      await Promise.all([
-        apiKey.setValue(getApiKey),
+      const updates = [
         pixelDistance.setValue(pixels),
         maxNumberOfElements.setValue(maxElements),
         bubbleColors.setValue(colorSettings),
@@ -100,7 +105,23 @@ function App() {
         bubblePosition.setValue(bubblePositionSetting),
         bubbleDistance.setValue(getBubbleDistance),
         modelAPI.setValue(getModelAPI)
-      ]);
+      ];
+      // Only touch the stored key if the user actually typed a replacement
+      // or explicitly reset it — otherwise an unrelated settings save would
+      // silently wipe the existing key.
+      if (apiKeyDirty) {
+        updates.push(apiKey.setValue(apiKeyDraft));
+      }
+
+      await Promise.all(updates);
+
+      if (apiKeyDirty) {
+        setHasApiKey(!!apiKeyDraft);
+        setApiKeyDraft('');
+        setApiKeyDirty(false);
+        setApiKeyEditing(false);
+      }
+
       setStatus('Settings saved successfully!');
       setStatusType('success');
       setTimeout(() => setStatus(''), 3000);
@@ -141,7 +162,10 @@ function App() {
   };
 
   const handleResetApiKey = () => {
-    setApiKey(defaults.apiKey);
+    setApiKeyDraft(defaults.apiKey);
+    setApiKeyDirty(true);
+    setHasApiKey(false);
+    setApiKeyEditing(true);
   };
 
   const handleResetMaxElements = () => {
@@ -254,14 +278,36 @@ function App() {
         label="API Key"
         description="Your key is stored locally."
       >
+        {hasApiKey && !apiKeyEditing && (
+          <Text c="green" size="sm" mb={4}>Key saved</Text>
+        )}
         <Group gap="xs">
-          <PasswordInput
-            id="apiKey"
-            value={getApiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder="Enter your API Key for your chosen service."
-            style={{ flex: 1 }}
-          />
+          {hasApiKey && !apiKeyEditing ? (
+            <Button
+              variant="light"
+              onClick={() => setApiKeyEditing(true)}
+              style={{ flex: 1 }}
+            >
+              Change Key
+            </Button>
+          ) : (
+            <PasswordInput
+              id="apiKey"
+              value={apiKeyDraft}
+              onChange={(e) => {
+                setApiKeyDraft(e.target.value);
+                setApiKeyDirty(true);
+              }}
+              onBlur={() => {
+                if (!apiKeyDraft && hasApiKey) {
+                  setApiKeyEditing(false);
+                }
+              }}
+              placeholder="Enter your API Key for your chosen service."
+              style={{ flex: 1 }}
+              autoFocus={apiKeyEditing}
+            />
+          )}
           <ActionIcon
             variant="light"
             color="gray"
