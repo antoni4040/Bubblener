@@ -2,7 +2,7 @@ import BubblesIcon from '@/assets/icon.svg';
 import defaults from '@/utils/constants/defaults';
 import themes from '@/utils/constants/themes';
 import getVisibleTextOnScreen, { getContentRoot } from '@/utils/domUtils';
-import findMentions from '@/utils/findMentions';
+import findMentions, { usableTerms } from '@/utils/findMentions';
 import HighlightOverlay from './HighlightOverlay/HighlightOverlay';
 import bubbleColors from '@/utils/storage/bubbleColors';
 import maxNumberOfCharacters from '@/utils/storage/maxNumberOfCharacters';
@@ -45,6 +45,9 @@ const BubblesContainer = () => {
     const [mentions, setMentions] = useState<Range[][]>([]);
     // What this page has cost so far, accumulated across scroll re-analyses.
     const [sessionUsage, setSessionUsage] = useState<TokenUsage>({ input: 0, output: 0 });
+    const [requestStartedAt, setRequestStartedAt] = useState<number | null>(null);
+    const [estimateMs, setEstimateMs] = useState<number | null>(null);
+    const [elapsedMs, setElapsedMs] = useState(0);
     // Two independent hover sources — the bubble and the word in the page.
     // Kept apart so leaving one doesn't clear a focus the other still holds.
     const [bubbleFocus, setBubbleFocus] = useState<number | null>(null);
@@ -75,6 +78,9 @@ const BubblesContainer = () => {
         lastSentTextRef.current = text;
 
         setLoading(true);
+        setRequestStartedAt(Date.now());
+        setEstimateMs(null);
+        setElapsedMs(0);
         browser.runtime.sendMessage({ text })
             .then(response => {
                 if (response && response.status === "processing") {
@@ -131,10 +137,14 @@ const BubblesContainer = () => {
             sender: any,
             sendResponse: (response?: any) => void
         ) => {
+            if (request.started) {
+                setEstimateMs(request.started.estimateMs ?? null);
+            }
             if (request.entities) {
                 setEntities(request.entities.nodes || []);
                 setError(null);
                 setLoading(false);
+                setRequestStartedAt(null);
             }
             if (request.usage) {
                 setSessionUsage(previous => ({
@@ -144,6 +154,9 @@ const BubblesContainer = () => {
             }
             if (request.error) {
                 setError(request.error);
+                // Without this the spinner outlives every failed request.
+                setLoading(false);
+                setRequestStartedAt(null);
                 setTimeout(() => setError(null), 10000);
             }
         };
@@ -205,6 +218,15 @@ const BubblesContainer = () => {
         };
     }, [scrollThreshold, showBubbles]);
 
+    // Drive the elapsed counter while a request is in flight.
+    useEffect(() => {
+        if (!isLoading || requestStartedAt === null) return;
+        const tick = () => setElapsedMs(Date.now() - requestStartedAt);
+        tick();
+        const timer = setInterval(tick, 200);
+        return () => clearInterval(timer);
+    }, [isLoading, requestStartedAt]);
+
     // Locate each entity in the page. Only re-runs when the entity set
     // changes — scrolling moves the rects, not the ranges.
     useEffect(() => {
@@ -212,7 +234,11 @@ const BubblesContainer = () => {
             setMentions([]);
             return;
         }
-        const terms = entities.map((entity: Entity) => [entity.entity_name]);
+        // The model's own surface forms find far more than the canonical name
+        // alone ("Alyona Ivanovna" vs "the pawnbroker"); hallucinated ones
+        // simply fail to match, so no extra verification is needed.
+        const terms = entities.map((entity: Entity) =>
+            usableTerms([entity.entity_name, ...(entity.mentions ?? [])]));
         setMentions(findMentions(getContentRoot(), terms));
     }, [entities]);
 
@@ -385,7 +411,12 @@ const BubblesContainer = () => {
             )}
 
             {isLoading && (
-                <LoadingIndicator bubblePosition={getBubblePosition} bubbleDistance={bubbleDistanceValue} />
+                <LoadingIndicator
+                    bubblePosition={getBubblePosition}
+                    bubbleDistance={bubbleDistanceValue}
+                    elapsedMs={elapsedMs}
+                    estimateMs={estimateMs}
+                />
             )}
 
             <EntityModal

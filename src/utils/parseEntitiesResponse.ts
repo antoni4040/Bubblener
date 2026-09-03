@@ -1,12 +1,22 @@
 import { z } from 'zod';
 import Entity from '@/utils/types/Entity';
 
+// Models routinely answer "no enrichment" with a placeholder string rather
+// than JSON null, which then renders as the word "null" in the modal.
+const PLACEHOLDERS = new Set(['null', 'none', 'n/a', 'na', 'nil', 'undefined', '-', '']);
+
+const emptyToNull = (value: string | null): string | null =>
+    value === null || PLACEHOLDERS.has(value.trim().toLowerCase()) ? null : value;
+
 const EntitySchema = z.object({
     entity_name: z.string(),
     entity_type: z.enum(['Person', 'Organization', 'Location', 'Key Concept/Theme']),
+    // Optional: older cached payloads predate it, and not every provider
+    // reliably returns it.
+    mentions: z.array(z.string()).optional(),
     description: z.string(),
     summary_from_text: z.string(),
-    contextual_enrichment: z.string().nullable(),
+    contextual_enrichment: z.string().nullable().transform(emptyToNull),
 });
 
 const EntityArraySchema = z.array(EntitySchema);

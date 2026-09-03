@@ -75,6 +75,19 @@ describe('parseEntitiesResponse', () => {
             .toThrow(/Failed to parse entities response as JSON/);
     });
 
+    it('treats a placeholder string as no enrichment at all', () => {
+        // Gemini's schema used to forbid null here, so the model wrote "null".
+        for (const placeholder of ['null', 'None', 'N/A', '  ', '-']) {
+            const raw = JSON.stringify([{ ...validEntity, contextual_enrichment: placeholder }]);
+            expect(parseEntitiesResponse(raw)[0].contextual_enrichment).toBeNull();
+        }
+    });
+
+    it('keeps genuine enrichment text untouched', () => {
+        const raw = JSON.stringify([{ ...validEntity, contextual_enrichment: 'Founded in 1985.' }]);
+        expect(parseEntitiesResponse(raw)[0].contextual_enrichment).toBe('Founded in 1985.');
+    });
+
     it('returns an empty array when given an empty JSON array', () => {
         expect(parseEntitiesResponse('[]')).toEqual([]);
     });

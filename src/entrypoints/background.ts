@@ -1,4 +1,11 @@
-import { GeminiAPIRequest, ChatGPTAPIRequest, DeepSeekAPIRequest } from '@/utils/promptUtils';
+import { GeminiAPIRequest, ChatGPTAPIRequest, DeepSeekAPIRequest, OllamaAPIRequest } from '@/utils/promptUtils';
+import models from '@/utils/constants/models';
+import timingStats from '@/utils/storage/timingStats';
+import { estimateMs, recordSample } from '@/utils/timing';
+import { logRequest, logResponse, logFailure } from '@/utils/logger';
+import { REQUEST_TIMEOUT_MS } from '@/utils/promptUtils';
+import modelTier from '@/utils/storage/modelTier';
+import ollamaModel from '@/utils/storage/ollamaModel';
 import parseEntitiesResponse from '@/utils/parseEntitiesResponse';
 import tokenUsage from '@/utils/storage/tokenUsage';
 import type { ProviderResponse } from '@/utils/promptUtils';
@@ -6,6 +13,14 @@ import apiKey from '@/utils/storage/apiKey';
 import modelAPI from '@/utils/storage/modelAPI';
 import maxNumberOfElements from '@/utils/storage/maxNumberOfElements';
 import ModelAPIsEnum from '@/utils/types/modelAPIsEnum';
+
+/** A request that never reached the provider: DNS, offline, CORS, a blocker,
+ *  or a local server that isn't running. The SDKs surface these as a bare
+ *  TypeError or as APIConnectionError's "Connection error." */
+const isNetworkError = (error: any): boolean =>
+  error?.name === 'APIConnectionError'
+  || /failed to fetch|networkerror|connection error|fetch failed|load failed/i
+    .test(error?.message ?? '');
 
 export default defineBackground(() => {
   // Track which tabs have the extension activated
@@ -146,9 +161,12 @@ export default defineBackground(() => {
 
     console.log('Received text from activated content script. Processing...');
 
-    // Use the imported storage item to get the key
+    const currentModelAPI = await modelAPI.getValue();
+
+    // Use the imported storage item to get the key. Ollama runs locally and
+    // ignores the key entirely, so it must not be gated on one.
     const currentApiKey = await apiKey.getValue();
-    if (!currentApiKey) {
+    if (!currentApiKey && currentModelAPI !== ModelAPIsEnum.Ollama) {
       console.error('API Key not found. Please set it in the extension options.');
       // Notify the user
       browser.notifications.create({
@@ -161,26 +179,48 @@ export default defineBackground(() => {
     }
 
     const maxElements = await maxNumberOfElements.getValue();
-    const currentModelAPI = await modelAPI.getValue();
+    const tier = await modelTier.getValue();
+    const model = currentModelAPI === ModelAPIsEnum.Ollama
+      ? (await ollamaModel.getValue()) || models[ModelAPIsEnum.Ollama][tier]
+      : models[currentModelAPI][tier];
+
+    const stats = await timingStats.getValue();
+    const estimate = estimateMs(stats, model, request.text.length);
+    const startedAt = Date.now();
+
+    logRequest(currentModelAPI, model, tier, request.text.length, estimate);
+
+    // Tell the page what to expect so it can show progress rather than an
+    // indeterminate spinner.
+    if (sender.tab?.id) {
+      browser.tabs.sendMessage(sender.tab.id, {
+        started: { model, estimateMs: estimate },
+      }).catch(() => { /* page may have navigated away */ });
+    }
+
     try {
       let response: ProviderResponse | undefined;
       if (currentModelAPI === ModelAPIsEnum.ChatGPT) {
-        console.log('Using ChatGPT API for entity detection.');
-        response = await ChatGPTAPIRequest(request.text, maxElements, currentApiKey);
+        response = await ChatGPTAPIRequest(request.text, maxElements, currentApiKey, model);
       } else if (currentModelAPI === ModelAPIsEnum.Gemini) {
-        console.log('Using Gemini API for entity detection.');
-        response = await GeminiAPIRequest(request.text, maxElements, currentApiKey);
+        response = await GeminiAPIRequest(request.text, maxElements, currentApiKey, model);
       } else if (currentModelAPI === ModelAPIsEnum.DeepSeek) {
-        console.log('Using DeepSeek API for entity detection.');
-        response = await DeepSeekAPIRequest(request.text, maxElements, currentApiKey);
+        response = await DeepSeekAPIRequest(request.text, maxElements, currentApiKey, model);
+      } else if (currentModelAPI === ModelAPIsEnum.Ollama) {
+        response = await OllamaAPIRequest(request.text, maxElements, currentApiKey, model);
       }
 
       if (!response) {
         throw new Error('No response text received from API.');
       }
 
+      const durationMs = Date.now() - startedAt;
       const entities = parseEntitiesResponse(response.text);
-      console.log('Entities detected:', entities);
+      logResponse(model, durationMs, response.usage, entities.length);
+
+      await timingStats.setValue(
+        recordSample(stats, model, request.text.length, response.usage.output, durationMs)
+      );
 
       // Running total across every page, so the popup can show what the
       // user's own key has actually been spent on.
@@ -195,14 +235,28 @@ export default defineBackground(() => {
         await browser.tabs.sendMessage(sender.tab.id, {
           entities: { nodes: entities, links: [] },
           usage: response.usage,
+          durationMs,
         });
-        console.log('Entities sent to content script.');
       }
     } catch (error: any) {
-      console.error('Error calling API or processing response:', error);
+      logFailure(model, Date.now() - startedAt, error);
 
       let errorMessage = 'An unknown error occurred while processing entities.';
-      if (error?.message) {
+      // Abort/timeout surfaces as an opaque SDK error; name it plainly.
+      if (error?.name === 'TimeoutError' || error?.name === 'AbortError'
+        || /timed? ?out/i.test(error?.message ?? '')) {
+        errorMessage = `The model did not respond within ${REQUEST_TIMEOUT_MS / 1000}s. `
+          + 'Try the Low tier, a smaller "Max Number of Elements", or another provider.';
+      } else if (isNetworkError(error)) {
+        // "Failed to fetch" is all the browser gives us — the request never
+        // reached the provider. Say what that usually means for this provider
+        // rather than passing the opaque message through.
+        errorMessage = currentModelAPI === ModelAPIsEnum.Ollama
+          ? 'Could not reach Ollama at localhost:11434. Check that "ollama serve" is running, '
+            + 'and that OLLAMA_ORIGINS permits this extension — Ollama refuses unknown browser origins by default.'
+          : `Could not reach ${currentModelAPI}. The request never left the browser: `
+            + 'check your connection, VPN, or an ad/tracker blocker intercepting the API domain.';
+      } else if (error?.message) {
         try {
           const errorObj = JSON.parse(error.message);
           if (errorObj?.error?.message) {

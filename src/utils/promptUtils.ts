@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import EntitiesSchema from "@/utils/types/EntitiesSchema";
@@ -11,21 +11,62 @@ export interface ProviderResponse {
 
 const NO_USAGE: TokenUsage = { input: 0, output: 0 };
 
+/** Without this a hung request leaves the page spinning indefinitely. */
+export const REQUEST_TIMEOUT_MS = 90_000;
+
+/** The OpenAI SDK retries 5xx/429 twice by default, so a struggling provider
+ *  could hold the page for three full timeouts. One retry is enough to ride
+ *  out a blip without turning a bad minute into a bad five. */
+export const MAX_RETRIES = 1;
+
 const createPrompt = (maxElements: number, withJson: boolean): string => {
     const prompt = `# ROLE:
-    You are an expert research analyst. Your task is to extract key entities from a text and enrich them with your general knowledge to create a comprehensive knowledge base entry.
+    You are an expert research analyst building a reading index for a passage of text.
 
     # GOAL:
-    Identify the most significant entities in the provided text (e.g., articles, book chapters, news reports). For each entity, you will provide a one-sentence description, a more detailed summary based *only* on the text, and then supplement it with external, factual context.
+    Identify the most significant entities that actually appear in the provided
+    text. For each one, give a one-sentence description, a short summary drawn
+    only from the text, and optionally some outside context.
 
-    # INSTRUCTIONS:
-    1.  **Entity Identification**: Extract up to ${maxElements} of the most important entities. Focus on entities that are thematically significant or central to the text's narrative or argument.
-    2.  **Canonical Naming**: Consolidate all mentions of an entity (e.g., "The Company", "Acme Corp.", "Acme") under their single, most complete and formal name (e.g., "Acme Corporation").
-    3.  **Strict Information Synthesis**:
-        * **Description**: The description field must be a *single, concise sentence* that defines the entity's primary identity or role as presented in the text.
-        * **Summary**: The summary_from_text field must be a *3-4 sentence paragraph* that synthesizes all mentions of the entity to explain its broader activities, relationships, and significance *within the context of the document*.
-        * **Enrichment**: The contextual_enrichment field should contain supplementary facts from your general knowledge. If the entity is fictional or you have no external knowledge, this value must be null.
-    4.  **Entity Categorization**: Classify each entity into one of the following types: **Person**, **Organization**, **Location**, or **Key Concept/Theme** (e.g., "Quantum Entanglement", "Neoclassical Economics", "Character Arc").`
+    # GROUNDING RULES (these take priority over everything else):
+    1.  **Only what is in the text.** Every entity must genuinely appear in the
+        passage you were given. Never add entities from your own knowledge of
+        the work, its author, its title, or what you expect a text like this to
+        contain. If the passage is a fragment, index only that fragment.
+        This rule governs *which* entities you list and what goes in
+        description and summary_from_text. It does not restrict
+        contextual_enrichment, whose whole purpose is outside knowledge.
+    2.  **Use the words on the page.** entity_name must be a string that occurs
+        verbatim in the text. When several forms appear, choose the fullest one
+        that is literally present — do not assemble a more formal name that
+        does not occur (write "Acme" if that is all the text says, never
+        "Acme Corporation").
+    3.  **List the surface forms.** mentions must contain the distinct strings
+        that literally occur in the text for this entity, including
+        entity_name. Use proper names and specific noun phrases only. Never
+        include pronouns (he, she, it, they) or bare common nouns (the man,
+        the company) — they match far too much.
+    4.  **Fewer is fine.** Extract at most ${maxElements} entities, ranked by
+        significance to this passage. If the passage supports fewer, return
+        fewer. Never pad the list to reach the limit.
+
+    # FIELDS:
+    * **description**: a single concise sentence defining the entity's role as
+      presented in the text.
+    * **summary_from_text**: a 3-4 sentence paragraph supported by the provided
+      text alone. Do not import facts the passage does not state.
+    * **contextual_enrichment**: background this passage does not supply,
+      drawn from your own knowledge — what this entity is in the wider world,
+      or in the wider work it belongs to.
+      Being fictional is NOT a reason to leave this empty. Well-documented
+      characters, places and works (Raskolnikov, Middle-earth, the Pequod)
+      should be enriched exactly like real ones. Emit the JSON value null —
+      bare null, never the text "null", "N/A" or an empty string — only when
+      you genuinely lack reliable knowledge of this specific entity: something
+      this document invented, an obscure local name, or anything you would be
+      guessing at. Never fill it by restating the passage.
+    * **entity_type**: one of **Person**, **Organization**, **Location**, or
+      **Key Concept/Theme** (e.g. "Quantum Entanglement", "Character Arc").`
 
     if (withJson) {
         return `${prompt}
@@ -37,9 +78,10 @@ const createPrompt = (maxElements: number, withJson: boolean): string => {
                 {
                     "entity_name": "string",
                     "entity_type": "string",
+                    "mentions": ["string"],
                     "description": "string",
                     "summary_from_text": "string",
-                    "contextual_enrichment": "string"
+                    "contextual_enrichment": "string, or the literal null"
                 }
             ]
         }
@@ -49,14 +91,20 @@ const createPrompt = (maxElements: number, withJson: boolean): string => {
     return prompt;
 }
 
-export const GeminiAPIRequest = async (text: string, maxElements: number, apiKey: string): Promise<ProviderResponse> => {
+export const GeminiAPIRequest = async (text: string, maxElements: number, apiKey: string, model: string): Promise<ProviderResponse> => {
     const genAI = new GoogleGenAI({ apiKey });
     const response = await genAI.models.generateContent({
-        model: "gemini-2.5-flash-lite",
+        model,
         contents: text,
         config: {
+            abortSignal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
             thinkingConfig: {
-                thinkingBudget: 0, // Disables thinking
+                // Gemini 3.x replaced `thinkingBudget` with `thinkingLevel`,
+                // and no longer allows thinking to be switched off entirely —
+                // sending the old field is a 400 INVALID_ARGUMENT. LOW is the
+                // cheapest level both 3.5-flash-lite and 3.8-flash accept, and
+                // entity extraction needs no deep reasoning.
+                thinkingLevel: ThinkingLevel.LOW,
             },
             systemInstruction: createPrompt(maxElements, false),
             responseMimeType: "application/json",
@@ -72,6 +120,10 @@ export const GeminiAPIRequest = async (text: string, maxElements: number, apiKey
                             type: Type.STRING,
                             enum: ['Person', 'Organization', 'Location', 'Key Concept/Theme'],
                         },
+                        mentions: {
+                            type: Type.ARRAY,
+                            items: { type: Type.STRING },
+                        },
                         description: {
                             type: Type.STRING,
                         },
@@ -80,9 +132,12 @@ export const GeminiAPIRequest = async (text: string, maxElements: number, apiKey
                         },
                         contextual_enrichment: {
                             type: Type.STRING,
+                            // Without this the schema admits no empty value and
+                            // the model returns the *string* "null" instead.
+                            nullable: true,
                         },
                     },
-                    propertyOrdering: ["entity_name", "entity_type",
+                    propertyOrdering: ["entity_name", "entity_type", "mentions",
                         "description", "summary_from_text", "contextual_enrichment"],
                 },
             },
@@ -98,11 +153,11 @@ export const GeminiAPIRequest = async (text: string, maxElements: number, apiKey
     };
 }
 
-export const ChatGPTAPIRequest = async (text: string, maxElements: number, apiKey: string): Promise<ProviderResponse> => {
-    const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
+export const ChatGPTAPIRequest = async (text: string, maxElements: number, apiKey: string, model: string): Promise<ProviderResponse> => {
+    const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true, timeout: REQUEST_TIMEOUT_MS, maxRetries: MAX_RETRIES });
 
     const response = await openai.responses.parse({
-        model: "gpt-5-nano",
+        model,
         input: [
             {
                 role: "system",
@@ -130,23 +185,58 @@ export const ChatGPTAPIRequest = async (text: string, maxElements: number, apiKe
     };
 };
 
-export const DeepSeekAPIRequest = async (text: string, maxElements: number, apiKey: string): Promise<ProviderResponse> => {
+export const DeepSeekAPIRequest = async (text: string, maxElements: number, apiKey: string, model: string): Promise<ProviderResponse> => {
     const openai = new OpenAI({
         baseURL: 'https://api.deepseek.com',
         apiKey: apiKey,
-        dangerouslyAllowBrowser: true
+        dangerouslyAllowBrowser: true,
+        timeout: REQUEST_TIMEOUT_MS,
+        maxRetries: MAX_RETRIES
     });
 
     const response = await openai.chat.completions.create({
         messages: [{ role: "system", content: createPrompt(maxElements, true) },
         { role: "user", content: text }],
-        model: "deepseek-chat",
+        model,
         // DeepSeek is the one provider without schema-enforced output, so ask
         // for JSON mode explicitly rather than trusting the prompt alone.
         response_format: { type: 'json_object' },
         // The default output cap truncates mid-object once maxElements grows,
         // and a truncated object is invalid JSON.
         max_tokens: 8192,
+    });
+
+    return {
+        text: response.choices[0]?.message.content ?? "",
+        usage: {
+            input: response.usage?.prompt_tokens ?? 0,
+            output: response.usage?.completion_tokens ?? 0,
+        },
+    };
+};
+/**
+ * Ollama, through its OpenAI-compatible router at /v1.
+ *
+ * The API key is required by the SDK but ignored by Ollama, and nothing leaves
+ * the machine — which is the whole point of this provider.
+ */
+export const OllamaAPIRequest = async (text: string, maxElements: number, _apiKey: string, model: string): Promise<ProviderResponse> => {
+    const openai = new OpenAI({
+        baseURL: 'http://localhost:11434/v1',
+        apiKey: 'ollama',
+        dangerouslyAllowBrowser: true,
+        timeout: REQUEST_TIMEOUT_MS,
+        maxRetries: MAX_RETRIES
+    });
+
+    const response = await openai.chat.completions.create({
+        messages: [{ role: "system", content: createPrompt(maxElements, true) },
+        { role: "user", content: text }],
+        model,
+        response_format: { type: 'json_object' },
+        max_tokens: 8192,
+        // Small local models drift into invalid JSON at higher temperatures.
+        temperature: 0,
     });
 
     return {

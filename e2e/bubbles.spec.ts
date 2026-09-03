@@ -85,6 +85,41 @@ test('shows an error toast when the API call fails', async ({ context, backgroun
     await expect(page.getByText('Error', { exact: true })).toBeVisible();
 });
 
+test('clears the spinner when a request fails, and shows timing while it runs', async ({ context, background }) => {
+    // A failed request used to leave "Processing entities..." on screen
+    // forever, which reads as a hang rather than an error.
+    let release: (() => void) | null = null;
+    await context.route(DEEPSEEK_URL, async (route) => {
+        await new Promise<void>((resolve) => { release = resolve; });
+        // 400 rather than 500: the SDK retries 5xx, which would fire the
+        // route handler again and hang on a fresh gate.
+        return route.fulfill({ status: 400, json: { error: { message: 'boom' } } });
+    });
+
+    const page = await activateOnArticle({ context, background });
+
+    // While in flight: the indicator is up and counting.
+    await expect(page.getByText('Processing entities...')).toBeVisible();
+    await expect(page.getByText(/^\d+(\.\d+)?(ms|s)$/)).toBeVisible();
+
+    release!();
+
+    // After failure: error surfaces AND the spinner goes away.
+    await expect(page.getByText('Error', { exact: true })).toBeVisible();
+    await expect(page.getByText('Processing entities...')).toHaveCount(0);
+});
+
+test('explains a network failure instead of passing "Failed to fetch" through', async ({ context, background }) => {
+    // The request never leaves the browser: no response, just a dead socket.
+    await context.route(DEEPSEEK_URL, (route) => route.abort('failed'));
+
+    const page = await activateOnArticle({ context, background });
+
+    await expect(page.getByText(/Could not reach DeepSeek/)).toBeVisible();
+    await expect(page.getByText(/connection, VPN, or an ad/)).toBeVisible();
+    await expect(page.getByText('Processing entities...')).toHaveCount(0);
+});
+
 test('applies the selected theme to bubble colors and the accent gradient', async ({ context, background }) => {
     await context.route(DEEPSEEK_URL, (route) =>
         route.fulfill({

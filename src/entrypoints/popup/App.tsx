@@ -2,7 +2,7 @@ import BubblePositionEnum from '@/utils/types/bubblePositionEnum';
 import bubbleColors from '@/utils/storage/bubbleColors';
 import bubblePosition from '@/utils/storage/bubblePosition';
 import maxNumberOfCharacters from '@/utils/storage/maxNumberOfCharacters';
-import { ActionIcon, Button, Combobox, Group, Image, Input, InputBase, NumberInput, PasswordInput, Stack, Switch, Text, Title, useCombobox } from '@mantine/core';
+import { ActionIcon, Button, Combobox, Group, Image, Input, InputBase, NumberInput, PasswordInput, Stack, Switch, Text, TextInput, Title, useCombobox } from '@mantine/core';
 import { IconDeviceFloppy, IconRestore, IconRotateClockwise } from '@tabler/icons-react';
 import { useEffect, useState } from 'react';
 import EntityColorSection from '@/components/EntityColorSection/EntityColorSection';
@@ -14,6 +14,10 @@ import pixelDistance from '@/utils/storage/pixelDistance';
 import bubbleDistance from '@/utils/storage/bubbleDistance';
 import modelAPI from '@/utils/storage/modelAPI';
 import modelAPIsEnum from '@/utils/types/modelAPIsEnum';
+import ModelTierEnum from '@/utils/types/modelTierEnum';
+import modelTier from '@/utils/storage/modelTier';
+import ollamaModel from '@/utils/storage/ollamaModel';
+import models from '@/utils/constants/models';
 import themeStorage from '@/utils/storage/theme';
 import bubbleSize from '@/utils/storage/bubbleSize';
 import bubbleTransparency from '@/utils/storage/bubbleTransparency';
@@ -78,6 +82,8 @@ function App({ onThemeChange }: AppProps = {}) {
   const [isTransparent, setTransparent] = useState(defaults.bubbleTransparency);
   const [highlightsOn, setHighlightsOn] = useState(defaults.textHighlighting);
   const [usage, setUsage] = useState({ input: 0, output: 0, calls: 0 });
+  const [tier, setTier] = useState<ModelTierEnum>(defaults.modelTier);
+  const [localModel, setLocalModel] = useState(defaults.ollamaModel);
 
   useEffect(() => {
     async function loadSettings() {
@@ -94,7 +100,9 @@ function App({ onThemeChange }: AppProps = {}) {
         savedBubbleSize,
         savedTransparency,
         savedHighlighting,
-        savedUsage
+        savedUsage,
+        savedTier,
+        savedLocalModel
       ] = await Promise.all([
         apiKey.getValue(),
         pixelDistance.getValue(),
@@ -108,7 +116,9 @@ function App({ onThemeChange }: AppProps = {}) {
         bubbleSize.getValue(),
         bubbleTransparency.getValue(),
         textHighlighting.getValue(),
-        tokenUsage.getValue()
+        tokenUsage.getValue(),
+        modelTier.getValue(),
+        ollamaModel.getValue()
       ]);
 
       setHasApiKey(!!savedApiKey);
@@ -124,6 +134,8 @@ function App({ onThemeChange }: AppProps = {}) {
       setTransparent(savedTransparency ?? defaults.bubbleTransparency);
       setHighlightsOn(savedHighlighting ?? defaults.textHighlighting);
       setUsage(savedUsage ?? { input: 0, output: 0, calls: 0 });
+      setTier(savedTier || defaults.modelTier);
+      setLocalModel(savedLocalModel ?? defaults.ollamaModel);
     }
     loadSettings();
   }, []);
@@ -161,7 +173,9 @@ function App({ onThemeChange }: AppProps = {}) {
         themeStorage.setValue(selectedTheme),
         bubbleSize.setValue(getBubbleSize),
         bubbleTransparency.setValue(isTransparent),
-        textHighlighting.setValue(highlightsOn)
+        textHighlighting.setValue(highlightsOn),
+        modelTier.setValue(tier),
+        ollamaModel.setValue(localModel)
       ];
       // Only touch the stored key if the user actually typed a replacement
       // or explicitly reset it — otherwise an unrelated settings save would
@@ -198,6 +212,7 @@ function App({ onThemeChange }: AppProps = {}) {
       setBubblePositionSetting(defaults.position);
       setBubbleDistance(defaults.bubbleDistance);
       setSelectedTheme(defaults.theme);
+      setTier(defaults.modelTier);
       setBubbleSize(defaults.bubbleSize);
       setTransparent(defaults.bubbleTransparency);
       setHighlightsOn(defaults.textHighlighting);
@@ -213,7 +228,8 @@ function App({ onThemeChange }: AppProps = {}) {
         themeStorage.setValue(defaults.theme),
         bubbleSize.setValue(defaults.bubbleSize),
         bubbleTransparency.setValue(defaults.bubbleTransparency),
-        textHighlighting.setValue(defaults.textHighlighting)
+        textHighlighting.setValue(defaults.textHighlighting),
+        modelTier.setValue(defaults.modelTier)
       ]);
 
       setStatus('All settings reset to defaults!');
@@ -287,6 +303,10 @@ function App({ onThemeChange }: AppProps = {}) {
     onDropdownClose: () => modelCombobox.resetSelectedOption(),
   });
 
+  const tierCombobox = useCombobox({
+    onDropdownClose: () => tierCombobox.resetSelectedOption(),
+  });
+
   const themeCombobox = useCombobox({
     onDropdownClose: () => themeCombobox.resetSelectedOption(),
   });
@@ -300,6 +320,12 @@ function App({ onThemeChange }: AppProps = {}) {
   const modelOptions = Object.values(modelAPIsEnum).map(api => (
     <Combobox.Option key={api} value={api}>
       {api}
+    </Combobox.Option>
+  ));
+
+  const tierOptions = Object.values(ModelTierEnum).map(t => (
+    <Combobox.Option key={t} value={t}>
+      {t} &mdash; {models[getModelAPI][t]}
     </Combobox.Option>
   ));
 
@@ -410,8 +436,56 @@ function App({ onThemeChange }: AppProps = {}) {
       </Input.Wrapper>
 
       <Input.Wrapper
+        label="Model Quality"
+        description={getModelAPI === modelAPIsEnum.Ollama
+          ? 'Used only when no local model is named below.'
+          : 'Low is cheapest and usually enough; High reads dense text more reliably.'}
+      >
+        <Combobox
+          store={tierCombobox}
+          onOptionSubmit={(val) => {
+            setTier(val as ModelTierEnum);
+            tierCombobox.closeDropdown();
+          }}
+        >
+          <Combobox.Target>
+            <InputBase
+              component="button"
+              type="button"
+              pointer
+              rightSection={<Combobox.Chevron />}
+              rightSectionPointerEvents="none"
+              onClick={() => tierCombobox.toggleDropdown()}
+              style={{ flex: 1 }}
+            >
+              {tier} &mdash; {models[getModelAPI][tier]}
+            </InputBase>
+          </Combobox.Target>
+
+          <Combobox.Dropdown>
+            <Combobox.Options>{tierOptions}</Combobox.Options>
+          </Combobox.Dropdown>
+        </Combobox>
+      </Input.Wrapper>
+
+      {getModelAPI === modelAPIsEnum.Ollama && (
+        <Input.Wrapper
+          label="Ollama Model"
+          description="Name of a model you have pulled, e.g. llama3.2. Leave blank to use the tier default."
+        >
+          <TextInput
+            value={localModel}
+            onChange={(event) => setLocalModel(event.currentTarget.value)}
+            placeholder={models[modelAPIsEnum.Ollama][tier]}
+          />
+        </Input.Wrapper>
+      )}
+
+      <Input.Wrapper
         label="API Key"
-        description="Your key is stored locally."
+        description={getModelAPI === modelAPIsEnum.Ollama
+          ? 'Not needed — Ollama runs on your machine and nothing leaves it.'
+          : 'Your key is stored locally.'}
       >
         {hasApiKey && !apiKeyEditing && (
           <Text c="green" size="sm" mb={4}>Key saved</Text>

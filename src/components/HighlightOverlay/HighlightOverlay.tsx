@@ -22,11 +22,14 @@ interface Mark {
     rect: DOMRect;
 }
 
-/** A dense text ("Raskolnikov" in a whole novel) would otherwise carpet the
- *  screen in connectors, each one raking across the prose. The boxes already
- *  show where every mention is; the line only has to establish which bubble
- *  they belong to, and one line does that. */
-const MAX_CONNECTORS = 1;
+/** Every mention on screen gets its own line. A pathological page (a novel's
+ *  worth of "Raskolnikov" in one viewport) is held back by thinning the lines
+ *  rather than dropping them — see `connectorOpacity`. */
+const MAX_CONNECTORS = 24;
+
+/** Many simultaneous lines read as noise, so they get fainter as they multiply. */
+const connectorOpacity = (count: number): number =>
+    Math.min(0.75, Math.max(0.25, 2.5 / count));
 
 /**
  * Paints mention marks and bubble connectors on a fixed, pointer-events-none
@@ -145,6 +148,8 @@ const HighlightOverlay = ({
     const nearestOffscreen = anchorFor(focusedMarks.filter((m) => !onScreen(m.rect)))
         .sort((a, b) => distanceOutside(a) - distanceOutside(b))[0];
 
+    // Every visible mention connects; only the off-screen ones collapse to a
+    // single representative line.
     const connectors = [
         ...visibleAnchors
             .slice()
@@ -152,6 +157,7 @@ const HighlightOverlay = ({
             .slice(0, MAX_CONNECTORS),
         ...(nearestOffscreen ? [nearestOffscreen] : []),
     ];
+    const strokeOpacity = connectorOpacity(connectors.length);
 
     return (
         <svg
@@ -162,7 +168,11 @@ const HighlightOverlay = ({
                 position: 'fixed',
                 inset: 0,
                 pointerEvents: 'none',
-                zIndex: 2147483000,
+                // Bottom of our own stack. The whole shadow host already sits
+                // above the page, so this only has to lose to Bubblener's own
+                // UI — bubbles, popovers, modal — which it would otherwise
+                // paint marks and connector lines straight across.
+                zIndex: 1,
                 overflow: 'visible',
             }}
         >
@@ -216,7 +226,7 @@ const HighlightOverlay = ({
                         fill="none"
                         stroke={ink}
                         strokeWidth={1.5}
-                        strokeOpacity={0.75}
+                        strokeOpacity={strokeOpacity}
                     />
                 );
             })}

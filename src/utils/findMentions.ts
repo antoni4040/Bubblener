@@ -7,6 +7,40 @@
 
 const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEXTAREA', 'SELECT']);
 
+// Text nodes in separate blocks must not be glued together: "…Punishment" +
+// "Dounia went out" would read as "PunishmentDounia" and the word-boundary
+// check would reject a mention that starts a paragraph. Inline splits
+// ("New <b>Jersey</b>") must still join seamlessly, so only block changes
+// insert a break.
+const BLOCK_CONTAINER = [
+    'address', 'article', 'aside', 'blockquote', 'dd', 'details', 'div', 'dl', 'dt',
+    'fieldset', 'figcaption', 'figure', 'footer', 'form', 'h1', 'h2', 'h3', 'h4',
+    'h5', 'h6', 'header', 'li', 'main', 'nav', 'ol', 'p', 'pre', 'section',
+    'table', 'td', 'th', 'tr', 'ul',
+].join(',');
+
+// A model that returns "he" or "the man" as a surface form would light up half
+// the page, so those are dropped rather than trusted.
+const TOO_COMMON = new Set([
+    'he', 'she', 'it', 'they', 'him', 'her', 'them', 'his', 'hers', 'their',
+    'i', 'we', 'us', 'you', 'this', 'that', 'these', 'those', 'who', 'which',
+    'the man', 'the woman', 'the company', 'the city', 'the country',
+    'the young man', 'the old man', 'the old woman', 'the girl', 'the boy',
+]);
+
+/** Filters surface forms that would match far more than the entity. */
+export const usableTerms = (terms: string[]): string[] => {
+    const seen = new Set<string>();
+    return terms
+        .map((term) => term.trim())
+        .filter((term) => {
+            const key = term.toLowerCase();
+            if (term.length < 2 || TOO_COMMON.has(key) || seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+};
+
 interface TextIndex {
     text: string;
     /** Parallel array: where each text node's content starts in `text`. */
@@ -25,8 +59,16 @@ const buildTextIndex = (root: Node): TextIndex => {
 
     const chunks: { node: Text; start: number }[] = [];
     let text = '';
+    let lastBlock: Element | null = null;
     let current = walker.nextNode() as Text | null;
+
     while (current) {
+        const block = current.parentElement?.closest(BLOCK_CONTAINER) ?? null;
+        // The separator belongs to no chunk, so offsets inside chunks still
+        // map back to their node cleanly.
+        if (chunks.length && block !== lastBlock) text += '\n';
+        lastBlock = block;
+
         chunks.push({ node: current, start: text.length });
         text += current.nodeValue;
         current = walker.nextNode() as Text | null;

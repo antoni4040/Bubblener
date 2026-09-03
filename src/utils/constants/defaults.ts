@@ -1,5 +1,6 @@
 import BubblePositionEnum from "@/utils/types/bubblePositionEnum";
 import modelAPIsEnum from "@/utils/types/modelAPIsEnum";
+import ModelTierEnum from "@/utils/types/modelTierEnum";
 import ThemeEnum from "@/utils/types/themeEnum";
 import themes from "@/utils/constants/themes";
 
@@ -10,6 +11,8 @@ const defaultTheme = ThemeEnum.Light;
 const defaults = {
     theme: defaultTheme,
     modelAPI: modelAPIsEnum.Gemini,
+    modelTier: ModelTierEnum.Low,
+    ollamaModel: '',
     apiKey: '',
     scrollThreshold: 1000,
     maxCharacters: 16000,
