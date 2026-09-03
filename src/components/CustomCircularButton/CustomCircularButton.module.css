@@ -13,10 +13,10 @@
 
 /* Define the button's style */
 .circularButton {
-  /* Sizing and Shape */
+  /* Sizing and Shape — themes decide whether this is a disc or a key. */
   width: 56px;
   height: 56px;
-  border-radius: 50%;
+  border-radius: var(--bn-control-radius, 50%);
 
   /* Layout */
   display: flex;
@@ -32,7 +32,7 @@
   /* Gradient and Animation */
   color: white;
   fill: #fff;
-  background: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
+  background: var(--bn-accent-gradient, linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab));
   background-size: 400% 400%;
   animation: animatedGradient 15s ease infinite;
 
@@ -42,8 +42,7 @@
 
 /* Hover State */
 .circularButton:hover {
-  background: linear-gradient(45deg, #23d5ab, #23a6d5, #e73c7e, #ee7752);
-  background-size: 400% 400%;
+  filter: brightness(1.15);
   transform: scale(1.1);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
 }

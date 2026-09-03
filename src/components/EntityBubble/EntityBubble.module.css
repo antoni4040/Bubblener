@@ -1,24 +1,29 @@
 .entityBubble {
   position: relative;
   color: white;
+  font-family: var(--bn-font-family, inherit);
   padding: 8px 12px;
-  border-radius: 20px;
+  border: var(--bn-bubble-border, none);
+  border-radius: var(--bn-bubble-radius, 20px);
   cursor: pointer;
   font-size: 16px;
-  font-weight: 500;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  font-weight: var(--bn-bubble-weight, 500);
+  letter-spacing: var(--bn-bubble-tracking, normal);
+  text-transform: var(--bn-bubble-transform, none);
+  font-variant-caps: var(--bn-bubble-variant, normal);
+  box-shadow: var(--bn-bubble-shadow, 0 2px 8px rgba(0, 0, 0, 0.15));
   transition: all 0.2s ease;
   user-select: none;
   word-wrap: break-word;
 }
 
 .entityBubble:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  transform: var(--bn-bubble-hover-lift, translateY(-2px));
+  box-shadow: var(--bn-bubble-hover-shadow, 0 4px 12px rgba(0, 0, 0, 0.2));
 }
 
 .popoverText {
   font-size: 16px !important;
   line-height: 1.4;
-  color: #333;
+  color: var(--bn-surface-text, var(--mantine-color-text));
 }

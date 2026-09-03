@@ -59,9 +59,17 @@ const EntityBubble = ({ entity, colors, onEntityClick }: EntityBubbleProps) => {
                     {entity.entity_name}
                 </div>
             </Popover.Target>
-            <Popover.Dropdown style={{ pointerEvents: 'none', width: "300px" }}>
+            <Popover.Dropdown style={{
+                pointerEvents: 'none',
+                width: '300px',
+                background: 'var(--bn-surface-bg)',
+                borderColor: 'var(--bn-surface-border, transparent)',
+                borderRadius: 'var(--bn-surface-radius)',
+                boxShadow: 'var(--bn-surface-shadow)',
+            }}>
                 <Badge size='sm' style={{
                     marginBottom: '8px',
+                    borderRadius: 'var(--bn-bubble-radius)',
                     background: getEntityGradient(entity.entity_type), color: getEntityColor(entity.entity_type)
                 }}>
                     {entity.entity_type}

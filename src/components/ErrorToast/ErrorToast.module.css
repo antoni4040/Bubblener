@@ -10,8 +10,9 @@
 .errorContent {
   background: linear-gradient(135deg, #ff6b6b, #ee5a52);
   color: white;
+  font-family: var(--bn-font-family, inherit);
   padding: 16px 20px;
-  border-radius: 8px;
+  border-radius: var(--bn-surface-radius, 8px);
   box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
   max-width: 400px;
   position: relative;

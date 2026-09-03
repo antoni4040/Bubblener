@@ -7,16 +7,24 @@ import { IconDeviceFloppy, IconRestore, IconRotateClockwise } from '@tabler/icon
 import { useEffect, useState } from 'react';
 import EntityColorSection from '@/components/EntityColorSection/EntityColorSection';
 import defaults from '@/utils/constants/defaults';
+import themes from '@/utils/constants/themes';
 import apiKey from '@/utils/storage/apiKey';
 import maxNumberOfElements from '@/utils/storage/maxNumberOfElements';
 import pixelDistance from '@/utils/storage/pixelDistance';
 import bubbleDistance from '@/utils/storage/bubbleDistance';
 import modelAPI from '@/utils/storage/modelAPI';
 import modelAPIsEnum from '@/utils/types/modelAPIsEnum';
+import themeStorage from '@/utils/storage/theme';
+import ThemeEnum from '@/utils/types/themeEnum';
 import './App.css';
 import bubblenerLogo from '/icon-128.png';
 
-function App() {
+interface AppProps {
+  /** Lets PopupRoot rebuild the Mantine theme when the selection changes. */
+  onThemeChange?: (theme: ThemeEnum) => void;
+}
+
+function App({ onThemeChange }: AppProps = {}) {
   // The real API key value is never loaded into state / rendered into the
   // DOM once saved, so it can't be read via devtools or copy/paste. Only a
   // freshly-typed replacement (apiKeyDraft) ever appears in the field.
@@ -60,6 +68,7 @@ function App() {
   const [bubblePositionSetting, setBubblePositionSetting] = useState<BubblePositionEnum>(defaults.position);
   const [getBubbleDistance, setBubbleDistance] = useState(defaults.bubbleDistance);
   const [getModelAPI, setModelAPI] = useState(defaults.modelAPI);
+  const [selectedTheme, setSelectedTheme] = useState<ThemeEnum>(defaults.theme);
 
   useEffect(() => {
     async function loadSettings() {
@@ -71,7 +80,8 @@ function App() {
         savedNumberOfCharacters,
         savedBubblePosition,
         savedBubbleDistance,
-        savedModelAPI
+        savedModelAPI,
+        savedTheme
       ] = await Promise.all([
         apiKey.getValue(),
         pixelDistance.getValue(),
@@ -80,7 +90,8 @@ function App() {
         maxNumberOfCharacters.getValue(),
         bubblePosition.getValue(),
         bubbleDistance.getValue(),
-        modelAPI.getValue()
+        modelAPI.getValue(),
+        themeStorage.getValue()
       ]);
 
       setHasApiKey(!!savedApiKey);
@@ -89,11 +100,32 @@ function App() {
       setColorSettings(savedEntityColors || defaults.colorSettings);
       setNumberOfCharacters(savedNumberOfCharacters || defaults.maxCharacters);
       setBubblePositionSetting(savedBubblePosition || defaults.position);
+      setSelectedTheme(savedTheme || defaults.theme);
       setBubbleDistance(savedBubbleDistance || defaults.bubbleDistance);
       setModelAPI(savedModelAPI || defaults.modelAPI);
     }
     loadSettings();
   }, []);
+
+  // Paint the popup surface itself. Mantine's light/dark scheme alone can't
+  // express the Library parchment or the Cyberpunk terminal look, and setting
+  // this on <body> also reaches portalled dropdowns.
+  useEffect(() => {
+    const preset = themes[selectedTheme];
+    document.body.style.backgroundColor = preset.surfaceBackground;
+    document.body.style.color = preset.surfaceText;
+    document.body.style.fontFamily = preset.fontFamily;
+
+    // Clear every override any theme might set before applying this one,
+    // so switching themes never leaves a stale variable behind.
+    Object.values(themes)
+      .flatMap(t => Object.keys(t.mantineVars ?? {}))
+      .forEach(name => document.body.style.removeProperty(name));
+    Object.entries(preset.mantineVars ?? {})
+      .forEach(([name, value]) => document.body.style.setProperty(name, value));
+
+    onThemeChange?.(selectedTheme);
+  }, [selectedTheme, onThemeChange]);
 
   const handleSave = async () => {
     try {
@@ -104,7 +136,8 @@ function App() {
         maxNumberOfCharacters.setValue(numberOfCharacters),
         bubblePosition.setValue(bubblePositionSetting),
         bubbleDistance.setValue(getBubbleDistance),
-        modelAPI.setValue(getModelAPI)
+        modelAPI.setValue(getModelAPI),
+        themeStorage.setValue(selectedTheme)
       ];
       // Only touch the stored key if the user actually typed a replacement
       // or explicitly reset it — otherwise an unrelated settings save would
@@ -140,6 +173,7 @@ function App() {
       setNumberOfCharacters(defaults.maxCharacters);
       setBubblePositionSetting(defaults.position);
       setBubbleDistance(defaults.bubbleDistance);
+      setSelectedTheme(defaults.theme);
 
       // Save default values to storage
       await Promise.all([
@@ -148,7 +182,8 @@ function App() {
         bubbleColors.setValue(defaults.colorSettings),
         maxNumberOfCharacters.setValue(defaults.maxCharacters),
         bubblePosition.setValue(defaults.position),
-        bubbleDistance.setValue(defaults.bubbleDistance)
+        bubbleDistance.setValue(defaults.bubbleDistance),
+        themeStorage.setValue(defaults.theme)
       ]);
 
       setStatus('All settings reset to defaults!');
@@ -159,6 +194,15 @@ function App() {
       setStatusType('error');
       console.error(error);
     }
+  };
+
+  const handleThemeChange = (newTheme: ThemeEnum) => {
+    setSelectedTheme(newTheme);
+    setColorSettings(themes[newTheme].colorSettings);
+  };
+
+  const handleResetTheme = () => {
+    handleThemeChange(defaults.theme);
   };
 
   const handleResetApiKey = () => {
@@ -203,6 +247,10 @@ function App() {
     onDropdownClose: () => modelCombobox.resetSelectedOption(),
   });
 
+  const themeCombobox = useCombobox({
+    onDropdownClose: () => themeCombobox.resetSelectedOption(),
+  });
+
   const positionOptions = Object.values(BubblePositionEnum).map(pos => (
     <Combobox.Option key={pos} value={pos}>
       {pos}
@@ -212,6 +260,12 @@ function App() {
   const modelOptions = Object.values(modelAPIsEnum).map(api => (
     <Combobox.Option key={api} value={api}>
       {api}
+    </Combobox.Option>
+  ));
+
+  const themeOptions = Object.values(ThemeEnum).map(t => (
+    <Combobox.Option key={t} value={t}>
+      {t}
     </Combobox.Option>
   ));
 
@@ -242,6 +296,47 @@ function App() {
         <Image src={bubblenerLogo} h={64} w={64} alt="Bubblener Logo" />
         <Title order={2} ta="center">Bubblener Settings</Title>
       </Group>
+
+      <Input.Wrapper
+        label="Theme"
+        description="Sets the color palette for both the settings and the on-page bubbles."
+      >
+        <Group gap="xs">
+          <Combobox
+            store={themeCombobox}
+            onOptionSubmit={(val) => {
+              handleThemeChange(val as ThemeEnum);
+              themeCombobox.closeDropdown();
+            }}
+          >
+            <Combobox.Target>
+              <InputBase
+                component="button"
+                type="button"
+                pointer
+                rightSection={<Combobox.Chevron />}
+                rightSectionPointerEvents="none"
+                onClick={() => themeCombobox.toggleDropdown()}
+                style={{ flex: 1 }}
+              >
+                {selectedTheme || <Input.Placeholder>Pick a theme</Input.Placeholder>}
+              </InputBase>
+            </Combobox.Target>
+
+            <Combobox.Dropdown>
+              <Combobox.Options>{themeOptions}</Combobox.Options>
+            </Combobox.Dropdown>
+          </Combobox>
+          <ActionIcon
+            variant="light"
+            color="gray"
+            onClick={handleResetTheme}
+            title="Reset Theme"
+          >
+            <IconRotateClockwise size={16} />
+          </ActionIcon>
+        </Group>
+      </Input.Wrapper>
 
       <Input.Wrapper
         label="Model API"

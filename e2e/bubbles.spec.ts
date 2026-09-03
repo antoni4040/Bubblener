@@ -21,11 +21,17 @@ const TEST_ENTITY = {
     contextual_enrichment: null,
 };
 
-// Sets up storage (API key + provider) and serves the fake article page,
-// then activates the extension on it via the real background code path.
-const activateOnArticle = async ({ context, background }: { context: any; background: any }) => {
-    await background.evaluate(() =>
-        chrome.storage.local.set({ apiKey: 'test-key', modelAPI: 'DeepSeek' })
+// Sets up storage (API key + provider, plus any extra overrides such as
+// theme/bubbleColors) and serves the fake article page, then activates the
+// extension on it via the real background code path.
+const activateOnArticle = async (
+    { context, background }: { context: any; background: any },
+    storageOverrides: Record<string, unknown> = {}
+) => {
+    await background.evaluate(
+        (overrides: Record<string, unknown>) =>
+            chrome.storage.local.set({ apiKey: 'test-key', modelAPI: 'DeepSeek', ...overrides }),
+        storageOverrides
     );
 
     await context.route(ARTICLE_URL, (route: any) =>
@@ -77,4 +83,50 @@ test('shows an error toast when the API call fails', async ({ context, backgroun
     const page = await activateOnArticle({ context, background });
 
     await expect(page.getByText('Error', { exact: true })).toBeVisible();
+});
+
+test('applies the selected theme to bubble colors and the accent gradient', async ({ context, background }) => {
+    await context.route(DEEPSEEK_URL, (route) =>
+        route.fulfill({
+            json: {
+                choices: [{ message: { content: JSON.stringify({ entities: [TEST_ENTITY] }) } }],
+            },
+        })
+    );
+
+    const page = await activateOnArticle({ context, background }, {
+        theme: 'Cyberpunk',
+        bubbleColors: {
+            person: { gradientStart: '#34b94e', gradientEnd: '#34b94e', textColor: '#060a07' },
+            organization: { gradientStart: '#d68f22', gradientEnd: '#d68f22', textColor: '#060a07' },
+            location: { gradientStart: '#56b6c2', gradientEnd: '#56b6c2', textColor: '#060a07' },
+            keyConcept: { gradientStart: '#c678dd', gradientEnd: '#c678dd', textColor: '#060a07' },
+        },
+    });
+
+    // The test entity is type "Organization" -> the terminal's amber channel.
+    const bubble = page.getByText(TEST_ENTITY.entity_name, { exact: true });
+    await expect(bubble).toBeVisible();
+    await expect(bubble).toHaveAttribute('style', /rgb\(214, 143, 34\)/);
+
+    // Themes change shape, not just color: terminals have square corners,
+    // nothing floats above the glass, and the type is monospace.
+    await expect(bubble).toHaveCSS('border-radius', '0px');
+    await expect(bubble).toHaveCSS('font-family', /mono/i);
+    await expect(bubble).toHaveCSS('text-transform', 'uppercase');
+
+    // The wrapping container carries the theme's accent gradient for the
+    // floating "show bubbles" button too.
+    await expect(page.locator('[style*="--bn-accent-gradient"]').first()).toBeAttached();
+
+    // The modal is a Mantine component inside a shadow root, so it does not
+    // inherit the color scheme and has to be themed explicitly. Regression
+    // guard: it must not fall back to stock Mantine dark grey / round corners.
+    await bubble.click();
+    const modal = page.locator('.mantine-Modal-content');
+    await expect(modal).toBeVisible();
+    await expect(modal).toHaveCSS('background-color', 'rgb(6, 10, 7)');
+    await expect(modal).toHaveCSS('border-radius', '0px');
+    await expect(page.getByText(TEST_ENTITY.summary_from_text))
+        .toHaveCSS('color', 'rgb(117, 207, 135)');
 });

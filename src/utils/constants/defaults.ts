@@ -1,7 +1,14 @@
 import BubblePositionEnum from "@/utils/types/bubblePositionEnum";
 import modelAPIsEnum from "@/utils/types/modelAPIsEnum";
+import ThemeEnum from "@/utils/types/themeEnum";
+import themes from "@/utils/constants/themes";
+
+// Light reproduces the original Bubblener palette, so it stays the default:
+// a fresh install (and "Reset All") looks exactly like it always has.
+const defaultTheme = ThemeEnum.Light;
 
 const defaults = {
+    theme: defaultTheme,
     modelAPI: modelAPIsEnum.Gemini,
     apiKey: '',
     scrollThreshold: 1000,
@@ -9,28 +16,7 @@ const defaults = {
     maxElements: 8,
     bubbleDistance: 20,
     position: BubblePositionEnum.TopRight,
-    colorSettings: {
-        person: {
-            gradientStart: '#3b82f6',
-            gradientEnd: '#1d4ed8',
-            textColor: '#FFFFFF'
-        },
-        organization: {
-            gradientStart: '#fb923c',
-            gradientEnd: '#ea580c',
-            textColor: '#FFFFFF'
-        },
-        location: {
-            gradientStart: '#22c55e',
-            gradientEnd: '#16a34a',
-            textColor: '#FFFFFF'
-        },
-        keyConcept: {
-            gradientStart: '#ef4444',
-            gradientEnd: '#dc2626',
-            textColor: '#FFFFFF'
-        }
-    }
+    colorSettings: themes[defaultTheme].colorSettings,
 };
 
 export default defaults;
