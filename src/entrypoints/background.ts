@@ -1,4 +1,5 @@
 import { GeminiAPIRequest, ChatGPTAPIRequest, DeepSeekAPIRequest } from '@/utils/promptUtils';
+import parseEntitiesResponse from '@/utils/parseEntitiesResponse';
 import apiKey from '@/utils/storage/apiKey';
 import modelAPI from '@/utils/storage/modelAPI';
 import maxNumberOfElements from '@/utils/storage/maxNumberOfElements';
@@ -82,6 +83,11 @@ export default defineBackground(() => {
       });
     }
   };
+
+  // Exposes the real activation path for e2e tests, which can't click the
+  // native context menu. Harmless in production: only reachable from code
+  // already running inside the background service worker.
+  (globalThis as any).__bubblenerTestActivate = activateContentScript;
 
   // Handle browser action click
   const handleBrowserActionClick = async (tab: any) => {
@@ -171,17 +177,7 @@ export default defineBackground(() => {
         throw new Error('No response text received from API.');
       }
 
-      if (response.startsWith('```json')) {
-        response = response.slice(7, -3);
-      }
-      let entities = JSON.parse(response);
-      if (!Array.isArray(entities)) {
-        if (entities.entities) {
-          entities = entities.entities;
-        } else {
-          throw new Error('Invalid response format: expected an array of entities.');
-        }
-      }
+      const entities = parseEntitiesResponse(response);
       console.log('Entities detected:', entities);
 
       if (sender.tab?.id) {

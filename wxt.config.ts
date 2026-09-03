@@ -21,7 +21,7 @@ export default defineConfig({
   modules: ['@wxt-dev/module-react'],
   srcDir: 'src',
   manifest: {
-    permissions: ['storage', 'contextMenus', 'notifications', 'activeTab'],
+    permissions: ['storage', 'contextMenus', 'notifications', 'activeTab', 'scripting'],
   },
   postcss: (config: PostCSSConfig) => {
     config.plugins.unshift(postcssSimpleVars());
