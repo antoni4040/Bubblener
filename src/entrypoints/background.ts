@@ -176,6 +176,23 @@ export default defineBackground(() => {
 
   // Process messages only from activated tabs
   browser.runtime.onMessage.addListener(async (request, sender) => {
+    // The on-page launcher asking to start. Only our own content scripts can
+    // send runtime messages (no externally_connectable), the launcher lives in
+    // a closed shadow root, and it checks isTrusted — so a page cannot reach
+    // this to trigger a paid call.
+    if (request.activate) {
+      // From a content script: the sender's own tab. From the popup (which is
+      // not a tab) an explicit id, which is safe because only our own
+      // extension pages can send runtime messages.
+      const target = sender.tab?.id
+        ? sender.tab
+        : request.tabId
+          ? await browser.tabs.get(request.tabId).catch(() => undefined)
+          : undefined;
+      if (target) await activateContentScript(target);
+      return { activated: !!target };
+    }
+
     // Check if message has text and sender is from an activated tab
     if (!request.text || !sender.tab?.id || !activatedTabs.has(sender.tab.id)) {
       return;

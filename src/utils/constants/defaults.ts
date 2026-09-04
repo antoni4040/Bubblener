@@ -23,6 +23,8 @@ const defaults = {
     bubbleTransparency: false,
     /** Mention marks and bubble connector lines drawn over the page. */
     textHighlighting: true,
+    /** The discreet on-page button that starts an analysis. */
+    showLauncher: true,
     position: BubblePositionEnum.TopRight,
     colorSettings: themes[defaultTheme].colorSettings,
 };
