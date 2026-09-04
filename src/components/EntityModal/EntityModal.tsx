@@ -1,15 +1,21 @@
 import Entity from "@/utils/types/Entity";
-import { Badge, Modal, Text, Stack, Title } from "@mantine/core";
+import { Badge, Button, Group, Modal, Text, Stack, Title } from "@mantine/core";
+import { IconStar, IconStarFilled, IconEyeOff } from "@tabler/icons-react";
 import EntityColors from "@/utils/types/EntityColors";
 
 type EntityModalProps = {
     entity: Entity | null;
     isOpen: boolean;
     colors: EntityColors
+    starred?: boolean;
     onClose: () => void;
+    onToggleStar?: (entity: Entity) => void;
+    onHide?: (entity: Entity) => void;
 };
 
-const EntityModal = ({ entity, colors, isOpen, onClose }: EntityModalProps) => {
+const EntityModal = ({
+    entity, colors, isOpen, starred = false, onClose, onToggleStar, onHide,
+}: EntityModalProps) => {
     if (!entity) return null;
 
     const getEntityColor = (entityType: string) => {
@@ -86,6 +92,32 @@ const EntityModal = ({ entity, colors, isOpen, onClose }: EntityModalProps) => {
                     <Text size="md" style={{ color: 'var(--bn-surface-muted)' }}>
                         {entity.contextual_enrichment}
                     </Text>
+                )}
+
+                {(onToggleStar || onHide) && (
+                    <Group gap="xs" mt="xs">
+                        {onToggleStar && (
+                            <Button
+                                size="xs"
+                                variant={starred ? 'filled' : 'light'}
+                                leftSection={starred ? <IconStarFilled size={14} /> : <IconStar size={14} />}
+                                onClick={() => onToggleStar(entity)}
+                            >
+                                {starred ? 'Starred' : 'Star'}
+                            </Button>
+                        )}
+                        {onHide && (
+                            <Button
+                                size="xs"
+                                variant="subtle"
+                                leftSection={<IconEyeOff size={14} />}
+                                style={{ color: 'var(--bn-surface-muted)' }}
+                                onClick={() => onHide(entity)}
+                            >
+                                Never show
+                            </Button>
+                        )}
+                    </Group>
                 )}
 
                 <Text size="sm" mt="md" style={{ color: 'var(--bn-surface-muted)' }}>

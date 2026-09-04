@@ -13,12 +13,14 @@ interface EntityBubbleProps {
     highlighted?: boolean;
     /** Suppresses the hover popover, e.g. while the detail modal is open. */
     quiet?: boolean;
+    starred?: boolean;
     onEntityClick: (entity: Entity) => void;
     onHoverChange?: (hovered: boolean) => void;
 }
 
 const EntityBubble = ({
-    entity, index, colors, highlighted = false, quiet = false, onEntityClick, onHoverChange,
+    entity, index, colors, highlighted = false, quiet = false, starred = false,
+    onEntityClick, onHoverChange,
 }: EntityBubbleProps) => {
     const [opened, { close, open }] = useDisclosure(false);
 
@@ -54,6 +56,7 @@ const EntityBubble = ({
                     }}
                     onClick={() => onEntityClick(entity)}
                 >
+                    {starred && <span aria-label="Starred" style={{ marginRight: '0.35em' }}>★</span>}
                     {entity.entity_name}
                 </div>
             </Popover.Target>

@@ -15,6 +15,16 @@ import modelAPI from '@/utils/storage/modelAPI';
 import maxNumberOfElements from '@/utils/storage/maxNumberOfElements';
 import ModelAPIsEnum from '@/utils/types/modelAPIsEnum';
 
+/** The provider is up but refusing work right now: capacity or rate limits.
+ *  Nothing is wrong with the request, so say "try again" rather than
+ *  presenting it as a failure the user has to fix. */
+const isBusyError = (error: any): boolean => {
+  const status = error?.status ?? error?.code;
+  if (status === 429 || status === 503) return true;
+  return /unavailable|overloaded|high demand|rate.?limit|too many requests/i
+    .test(error?.message ?? '');
+};
+
 /** A request that never reached the provider: DNS, offline, CORS, a blocker,
  *  or a local server that isn't running. The SDKs surface these as a bare
  *  TypeError or as APIConnectionError's "Connection error." */
@@ -26,6 +36,17 @@ const isNetworkError = (error: any): boolean =>
 export default defineBackground(() => {
   // Track which tabs have the extension activated
   const activatedTabs = new Set<number>();
+
+  /**
+   * The analysis currently running for each tab.
+   *
+   * Scrolling starts a new analysis while the previous one is still in flight.
+   * Left alone, every abandoned request runs to completion — spending the
+   * user's tokens and then delivering entities for a section they scrolled
+   * past long ago, which is what made the bubbles look stale.
+   */
+  const inFlight = new Map<number, { id: number; controller: AbortController }>();
+  let nextRequestId = 0;
 
   // Function to activate content script
   const activateContentScript = async (tab: any) => {
@@ -185,6 +206,15 @@ export default defineBackground(() => {
       ? (await ollamaModel.getValue()) || models[ModelAPIsEnum.Ollama][tier]
       : models[currentModelAPI][tier];
 
+    const tabId = sender.tab.id;
+    const requestId = ++nextRequestId;
+
+    // Supersede whatever this tab was already waiting on.
+    inFlight.get(tabId)?.controller.abort();
+    const controller = new AbortController();
+    inFlight.set(tabId, { id: requestId, controller });
+    const isCurrent = () => inFlight.get(tabId)?.id === requestId;
+
     const stats = await timingStats.getValue();
     const estimate = estimateMs(stats, model, request.text.length);
     const startedAt = Date.now();
@@ -195,6 +225,7 @@ export default defineBackground(() => {
     // indeterminate spinner.
     if (sender.tab?.id) {
       browser.tabs.sendMessage(sender.tab.id, {
+        requestId,
         started: { model, estimateMs: estimate },
       }).catch(() => { /* page may have navigated away */ });
     }
@@ -208,13 +239,16 @@ export default defineBackground(() => {
         if (ready.length <= streamed || !sender.tab?.id) return;
         const fresh = ready.slice(streamed);
         streamed = ready.length;
+        if (!isCurrent()) return;
         browser.tabs.sendMessage(sender.tab.id, {
+          requestId,
           entities: { nodes: fresh, links: [] },
           streaming: true,
         }).catch(() => { /* page navigated away mid-stream */ });
       };
 
       const providerRequest = {
+        signal: controller.signal,
         text: request.text, maxElements, apiKey: currentApiKey, model, onPartial,
       };
 
@@ -231,6 +265,11 @@ export default defineBackground(() => {
 
       if (!response) {
         throw new Error('No response text received from API.');
+      }
+
+      if (!isCurrent()) {
+        console.log(`[Bubblener] ⊘ ${model} · answer arrived after the reader moved on`);
+        return;
       }
 
       const durationMs = Date.now() - startedAt;
@@ -254,6 +293,7 @@ export default defineBackground(() => {
 
       if (sender.tab?.id) {
         await browser.tabs.sendMessage(sender.tab.id, {
+          requestId,
           entities: { nodes: entities, links: [] },
           usage: response.usage,
           durationMs,
@@ -261,6 +301,11 @@ export default defineBackground(() => {
         });
       }
     } catch (error: any) {
+      // Cancelled because the reader scrolled on — not a failure to report.
+      if (!isCurrent() || controller.signal.aborted) {
+        console.log(`[Bubblener] ⊘ ${model} · superseded by a newer request`);
+        return;
+      }
       logFailure(model, Date.now() - startedAt, error);
 
       let errorMessage = 'An unknown error occurred while processing entities.';
@@ -269,6 +314,10 @@ export default defineBackground(() => {
         || /timed? ?out/i.test(error?.message ?? '')) {
         errorMessage = `The model did not respond within ${REQUEST_TIMEOUT_MS / 1000}s. `
           + 'Try the Low tier, a smaller "Max Number of Elements", or another provider.';
+      } else if (isBusyError(error)) {
+        errorMessage = `${currentModelAPI} is busy right now — the model reported high demand `
+          + 'or a rate limit. Nothing is wrong with your settings; try again in a moment, '
+          + 'or switch tier or provider.';
       } else if (isNetworkError(error)) {
         // "Failed to fetch" is all the browser gives us — the request never
         // reached the provider. Say what that usually means for this provider
@@ -294,6 +343,7 @@ export default defineBackground(() => {
       if (sender.tab?.id) {
         try {
           await browser.tabs.sendMessage(sender.tab.id, {
+            requestId,
             error: {
               title: 'Error',
               message: errorMessage

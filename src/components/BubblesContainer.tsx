@@ -5,6 +5,10 @@ import getVisibleTextOnScreen, { getContentRoot } from '@/utils/domUtils';
 import findMentions, { usableTerms } from '@/utils/findMentions';
 import mergeEntities, { RankedEntity } from '@/utils/mergeEntities';
 import { isWithinReach } from '@/utils/entityDistance';
+import entityKey from '@/utils/entityKey';
+import starredEntities from '@/utils/storage/starredEntities';
+import hiddenEntities from '@/utils/storage/hiddenEntities';
+import { SavedEntities, SavedEntity } from '@/utils/types/SavedEntity';
 import maxNumberOfElements from '@/utils/storage/maxNumberOfElements';
 import HighlightOverlay from './HighlightOverlay/HighlightOverlay';
 import bubbleColors from '@/utils/storage/bubbleColors';
@@ -37,6 +41,11 @@ const BubblesContainer = () => {
     // The message listener is installed once and closes over its initial
     // state, so the live limit reaches it through a ref rather than state.
     const maxElementsRef = useRef(defaults.maxElements);
+    const [starred, setStarred] = useState<SavedEntities>({});
+    const [hidden, setHidden] = useState<SavedEntities>({});
+    // The message listener is installed once, so these reach it via refs.
+    const starredRef = useRef<SavedEntities>({});
+    const hiddenRef = useRef<SavedEntities>({});
     const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [error, setError] = useState(null);
@@ -63,6 +72,9 @@ const BubblesContainer = () => {
     const [mentionFocus, setMentionFocus] = useState<number | null>(null);
     const bubblesRef = useRef<HTMLDivElement | null>(null);
     const lastSentTextRef = useRef<string | null>(null);
+    // The id of the analysis whose answers we still want. Anything older has
+    // been superseded by scrolling and must be ignored even if it arrives.
+    const currentRequestRef = useRef<number | null>(null);
     const { setColorScheme } = useMantineColorScheme();
 
     // Send text to background script for processing
@@ -103,7 +115,7 @@ const BubblesContainer = () => {
     useEffect(() => {
         const loadSettings = async () => {
             try {
-                const [threshold, colors, characters, position, distance, selectedTheme, maxEls, size, transparent, highlights] = await Promise.all([
+                const [threshold, colors, characters, position, distance, selectedTheme, maxEls, star, hide, size, transparent, highlights] = await Promise.all([
                     pixelDistance.getValue(),
                     bubbleColors.getValue(),
                     maxNumberOfCharacters.getValue(),
@@ -111,6 +123,8 @@ const BubblesContainer = () => {
                     bubbleDistance.getValue(),
                     themeStorage.getValue(),
                     maxNumberOfElements.getValue(),
+                    starredEntities.getValue(),
+                    hiddenEntities.getValue(),
                     bubbleSize.getValue(),
                     bubbleTransparency.getValue(),
                     textHighlighting.getValue()
@@ -123,6 +137,10 @@ const BubblesContainer = () => {
                 setActiveTheme(selectedTheme ?? defaults.theme);
                 setColorScheme(themes[selectedTheme ?? defaults.theme].colorScheme);
                 maxElementsRef.current = maxEls ?? defaults.maxElements;
+                setStarred(star ?? {});
+                setHidden(hide ?? {});
+                starredRef.current = star ?? {};
+                hiddenRef.current = hide ?? {};
                 setBubbleSize(size ?? defaults.bubbleSize);
                 setTransparent(transparent ?? defaults.bubbleTransparency);
                 setShowHighlights(highlights ?? defaults.textHighlighting);
@@ -150,12 +168,27 @@ const BubblesContainer = () => {
             sender: any,
             sendResponse: (response?: any) => void
         ) => {
+            // Late answers from a section already scrolled past.
+            if (request.requestId !== undefined
+                && currentRequestRef.current !== null
+                && request.requestId < currentRequestRef.current) {
+                return;
+            }
+            if (request.requestId !== undefined) {
+                currentRequestRef.current = request.requestId;
+            }
+
             if (request.started) {
                 setEstimateMs(request.started.estimateMs ?? null);
             }
             if (request.entities) {
                 setEntities(previous => mergeEntities(
-                    previous, request.entities.nodes || [], maxElementsRef.current, batchRef.current
+                    previous, request.entities.nodes || [],
+                    maxElementsRef.current, batchRef.current,
+                    {
+                        pinned: new Set(Object.keys(starredRef.current)),
+                        hidden: new Set(Object.keys(hiddenRef.current)),
+                    },
                 ));
                 setError(null);
                 // Partial batches keep the request open; only the final
@@ -187,7 +220,8 @@ const BubblesContainer = () => {
             if (changes.pixelDistance || changes.bubbleColors ||
                 changes.maxNumberOfCharacters || changes.bubblePosition
                 || changes.bubbleDistance || changes.theme || changes.bubbleSize
-                || changes.maxNumberOfElements
+                || changes.maxNumberOfElements || changes.starredEntities
+                || changes.hiddenEntities
                 || changes.bubbleTransparency || changes.textHighlighting) {
                 console.log('Settings changed, reloading...');
                 loadSettings();
@@ -264,10 +298,14 @@ const BubblesContainer = () => {
         // Retire entities whose nearest mention is screens away: by chapter
         // four the people named in the introduction are no longer about
         // anything on the page, however important they were there.
-        const inReach = found.map((ranges) => isWithinReach(
-            ranges.map((range) => range.getBoundingClientRect()),
-            window.innerHeight,
-        ));
+        const inReach = found.map((ranges, index) =>
+            // A starred entity was pinned deliberately; distance must not
+            // retire it the way it retires the rest.
+            starred[entityKey(entities[index].entity_name)] !== undefined
+            || isWithinReach(
+                ranges.map((range) => range.getBoundingClientRect()),
+                window.innerHeight,
+            ));
 
         if (inReach.includes(false)) {
             // Re-running with the smaller set recomputes the mentions below.
@@ -276,7 +314,7 @@ const BubblesContainer = () => {
         }
 
         setMentions(found);
-    }, [entities]);
+    }, [entities, starred]);
 
     const focused = bubbleFocus ?? mentionFocus;
 
@@ -305,6 +343,29 @@ const BubblesContainer = () => {
     const handleCloseModal = () => {
         setIsModalOpen(false);
         setSelectedEntity(null);
+    };
+
+    const saveEntity = (entity: Entity): SavedEntity => ({
+        ...entity,
+        savedAt: Date.now(),
+        sourceUrl: location.href,
+        sourceTitle: document.title,
+    });
+
+    const handleToggleStar = async (entity: Entity) => {
+        const key = entityKey(entity.entity_name);
+        const next = { ...starredRef.current };
+        if (next[key]) delete next[key];
+        else next[key] = saveEntity(entity);
+        await starredEntities.setValue(next);
+    };
+
+    const handleHide = async (entity: Entity) => {
+        const key = entityKey(entity.entity_name);
+        await hiddenEntities.setValue({ ...hiddenRef.current, [key]: saveEntity(entity) });
+        // Also drop it from view immediately, rather than at the next batch.
+        setEntities((previous) => previous.filter((e) => entityKey(e.entity_name) !== key));
+        handleCloseModal();
     };
 
     const handleCloseError = () => {
@@ -394,6 +455,7 @@ const BubblesContainer = () => {
                         colors={entityColors}
                         highlighted={mentionFocus === index}
                         quiet={isModalOpen}
+                        starred={starred[entityKey(entity.entity_name)] !== undefined}
                         onEntityClick={handleEntityClick}
                         onHoverChange={handleBubbleHover(index)}
                     />
@@ -459,7 +521,10 @@ const BubblesContainer = () => {
                 entity={selectedEntity}
                 isOpen={isModalOpen}
                 colors={entityColors}
+                starred={selectedEntity ? starred[entityKey(selectedEntity.entity_name)] !== undefined : false}
                 onClose={handleCloseModal}
+                onToggleStar={handleToggleStar}
+                onHide={handleHide}
             />
 
             <ErrorToast

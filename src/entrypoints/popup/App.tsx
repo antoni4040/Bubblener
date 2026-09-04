@@ -3,7 +3,7 @@ import bubbleColors from '@/utils/storage/bubbleColors';
 import bubblePosition from '@/utils/storage/bubblePosition';
 import maxNumberOfCharacters from '@/utils/storage/maxNumberOfCharacters';
 import { ActionIcon, Button, Combobox, Group, Image, Input, InputBase, NumberInput, PasswordInput, Stack, Switch, Text, TextInput, Title, useCombobox } from '@mantine/core';
-import { IconDeviceFloppy, IconRestore, IconRotateClockwise } from '@tabler/icons-react';
+import { IconDeviceFloppy, IconRestore, IconRotateClockwise, IconBooks } from '@tabler/icons-react';
 import { useEffect, useState } from 'react';
 import EntityColorSection from '@/components/EntityColorSection/EntityColorSection';
 import defaults from '@/utils/constants/defaults';
@@ -772,6 +772,15 @@ function App({ onThemeChange }: AppProps = {}) {
       {status && (
         <Text c={statusType === 'success' ? 'green' : 'red'} size="sm" ta="center">{status}</Text>
       )}
+
+      <Button
+        variant="light"
+        leftSection={<IconBooks size={16} />}
+        onClick={() => browser.tabs.create({ url: browser.runtime.getURL('/library.html') })}
+        fullWidth
+      >
+        Starred &amp; hidden entities
+      </Button>
 
       <Group justify="space-between" mt="md" align="center">
         <Button

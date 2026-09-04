@@ -9,8 +9,8 @@ floats the entities as interactive bubbles on top of it. React 19 + Mantine 8, b
 (Vite under the hood), targeting Chrome MV3 and Firefox from one codebase.
 
 Bring-your-own-key by design: the user's own API key talks to Gemini, ChatGPT or DeepSeek directly
-from the extension. There is no backend, no middle party, and nothing to run locally — which is also
-why the key handling in the popup has rules (see below).
+from the extension, or to Ollama on localhost with no key at all. There is no backend and no middle
+party — which is also why the key handling in the popup has rules (see below).
 
 ## Commands
 
@@ -19,7 +19,7 @@ npm run dev              # Chrome dev build + auto-reload
 npm run dev:firefox
 
 npm run compile          # tsc --noEmit — run this before declaring anything done
-npm test                 # Vitest unit suite (49 tests / 11 files, ~10s)
+npm test                 # Vitest unit suite (116 tests / 16 files, ~30s)
 npm run test:watch
 npm run test:coverage    # v8 coverage; components + utils, entrypoints excluded
 
@@ -27,16 +27,56 @@ npm run test:e2e         # Playwright, real Chrome with the extension loaded
                          # `pretest:e2e` runs `wxt build` first — don't skip it,
                          # Playwright loads .output/chrome-mv3, not source
 
+npm run test:live        # real provider calls — opt-in, needs keys, costs ~a cent
 npm run build            # or build:firefox → .output/<target>/
 npm run zip              # store-ready archive
 ```
+
+### Live provider tests
+
+The unit suite mocks all four SDKs, so it verifies what we *send* and can never
+observe what a provider *accepts*. Every API break this project has hit was
+invisible to it: a thinking parameter Gemini 3.x rejected, a model id retired
+out from under us, a response schema that made `null` unrepresentable, a
+streaming body that parsed as empty. `npm run test:live` is the suite that
+catches those.
+
+```bash
+cp .env.example .env.local   # gitignored; never commit real keys
+# fill in whichever providers you want, then:
+npm run test:live
+```
+
+**Providers are independent — one key is enough.** Each suite skips itself when
+its variable is absent, and every run prints which providers are enabled and
+which are skipped before calling anything:
+
+```
+  Gemini    skipped  — set BUBBLENER_GEMINI_KEY to include it
+  DeepSeek  enabled  — BUBBLENER_DEEPSEEK_KEY is set
+```
+
+Variables are `BUBBLENER_GEMINI_KEY`, `BUBBLENER_OPENAI_KEY`,
+`BUBBLENER_DEEPSEEK_KEY`, and `BUBBLENER_OLLAMA=1` (no key — needs
+`ollama serve`, likely with `OLLAMA_ORIGINS='chrome-extension://*'`).
+`.env.example` documents where to get each one.
+
+Running it with **nothing** configured fails deliberately, rather than
+reporting "16 skipped", which reads exactly like a pass. Keys are read for
+presence only and never logged; the extension itself always takes its key from
+browser storage and never reads these files.
+
+Live tests are `*.live.test.ts` and are excluded from `vitest.config.ts`, so
+`npm test` and CI stay offline and free. They run only through
+`vitest.live.config.ts`.
 
 `npm install` runs `wxt prepare`, which generates `.wxt/` — **`tsconfig.json` extends
 `./.wxt/tsconfig.json`, so without it both `tsc` and Vitest fail to resolve anything.** `.wxt/` is
 gitignored; if a fresh clone won't typecheck, run `npx wxt prepare` before debugging anything else.
 
-No test touches the network or a real API. The three provider SDKs are mocked in unit tests and the
-provider endpoints are intercepted with `context.route()` in e2e — no key required, nothing billable.
+`npm test` and `npm run test:e2e` touch no network and no real API: the four provider SDKs are mocked
+in unit tests and the provider endpoints are intercepted with `context.route()` in e2e — no key
+required, nothing billable. `npm run test:live` is the deliberate exception, described above.
 
 ## Architecture
 
@@ -72,9 +112,11 @@ because Firefox and Chrome don't agree.
 
 ### Storage: one item per setting, all `local:`
 
-`apiKey`, `modelAPI`, `theme`, `bubbleColors`, `bubblePosition`, `bubbleDistance`, `pixelDistance`,
-`maxNumberOfElements`, `maxNumberOfCharacters` — each a `storage.defineItem` module under
-`utils/storage/`. `local:`, never `sync:`, so the key is never uploaded to a browser account.
+`apiKey`, `modelAPI`, `modelTier`, `ollamaModel`, `theme`, `bubbleColors`, `bubblePosition`,
+`bubbleDistance`, `bubbleSize`, `bubbleTransparency`, `textHighlighting`, `pixelDistance`,
+`maxNumberOfElements`, `maxNumberOfCharacters`, `tokenUsage`, `timingStats`, `starredEntities`,
+`hiddenEntities` — each a `storage.defineItem` module under `utils/storage/`. `local:`, never
+`sync:`, so the key is never uploaded to a browser account.
 
 `BubblesContainer` re-reads settings on `storage.onChanged`, so the popup's Save updates live pages
 without a reload. **Add new settings to that listener's key check or they won't apply until reload.**

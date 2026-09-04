@@ -17,7 +17,8 @@
     "test:coverage": "vitest run --coverage",
     "pretest:e2e": "wxt build",
     "test:e2e": "playwright test",
-    "postinstall": "wxt prepare"
+    "postinstall": "wxt prepare",
+    "test:live": "vitest run --config vitest.live.config.ts"
   },
   "dependencies": {
     "@google/genai": "^2.21.0",

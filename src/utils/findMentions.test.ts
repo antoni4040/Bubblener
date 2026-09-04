@@ -12,6 +12,22 @@ describe('usableTerms', () => {
             .toEqual(['Alyona Ivanovna', 'the pawnbroker']);
     });
 
+    it('drops reflexive pronouns, which refer to whoever the sentence is about', () => {
+        // "himself" was matched for Raskolnikov and then highlighted on every
+        // reflexive in the book, including ones referring to Svidrigaïlov.
+        expect(usableTerms(['Raskolnikov', 'himself', 'herself', 'themselves', 'oneself']))
+            .toEqual(['Raskolnikov']);
+    });
+
+    it('drops any single lowercase word, without needing it on a list', () => {
+        expect(usableTerms(['Sonia', 'sister', 'lodger', 'whoever'])).toEqual(['Sonia']);
+    });
+
+    it('keeps single-word names in scripts that have no letter case', () => {
+        // There is no capital to require in Chinese or Japanese.
+        expect(usableTerms(['北京'])).toEqual(['北京']);
+    });
+
     it('drops pronouns and bare common nouns, which would match half the page', () => {
         expect(usableTerms(['Raskolnikov', 'he', 'him', 'the young man', 'the old woman']))
             .toEqual(['Raskolnikov']);

@@ -305,6 +305,75 @@ test('retires entities left screens behind, however important', async ({ context
     await expect(bubbles.getByText('Nekrassov', { exact: true })).toHaveCount(0);
 });
 
+test('says the provider is busy rather than showing a raw 503', async ({ context, background }) => {
+    // A capacity failure is not the user's fault and not a settings problem.
+    await context.route(DEEPSEEK_URL, (route) => route.fulfill({
+        status: 503,
+        json: { error: { message: 'This model is currently experiencing high demand.' } },
+    }));
+
+    const page = await activateOnArticle({ context, background });
+
+    await expect(page.getByText(/DeepSeek is busy right now/)).toBeVisible();
+    await expect(page.getByText(/Nothing is wrong with your settings/)).toBeVisible();
+    await expect(page.getByText('Processing entities...')).toHaveCount(0);
+});
+
+test('discards answers for sections the reader has already scrolled past', async ({ context, background }) => {
+    // Real providers take seconds. Scrolling starts a new analysis while the
+    // previous is still in flight; every abandoned one used to complete and
+    // merge its entities, so the bubbles filled with passages long gone.
+    let n = 0;
+    await context.route(DEEPSEEK_URL, async (route) => {
+        const id = n++;
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        return route.fulfill(streamEntities([{
+            entity_name: `req-${id}`, entity_type: 'Person', mentions: [],
+            importance: 0.9, description: 'd', summary_from_text: 's',
+            contextual_enrichment: null,
+        }]));
+    });
+
+    const LONG_URL = 'https://example.com/slow';
+    await context.route(LONG_URL, (route) => route.fulfill({
+        contentType: 'text/html',
+        body: `<!DOCTYPE html><html><body style="font-size:18px;line-height:1.9"><article>`
+            + Array.from({ length: 200 }, (_, i) =>
+                `<h2>Part ${i + 1}</h2><p>Section ${i + 1} carries its own distinct prose, `
+                + `long enough to change what is on screen as the reader moves.</p>`).join('')
+            + `</article></body></html>`,
+    }));
+    await background.evaluate(() =>
+        chrome.storage.local.set({ apiKey: 'test-key', modelAPI: 'DeepSeek' }));
+
+    const page = await context.newPage();
+    await page.goto(LONG_URL);
+    const tabId = await background.evaluate(async (url: string) => {
+        const tabs = await chrome.tabs.query({ url });
+        return tabs[0]?.id as number;
+    }, LONG_URL);
+    await background.evaluate(
+        ({ id, url }: { id: number; url: string }) => (self as any).__bubblenerTestActivate({ id, url }),
+        { id: tabId as number, url: LONG_URL }
+    );
+
+    // Read on while answers are still outstanding.
+    for (let i = 0; i < 4; i++) {
+        await page.mouse.wheel(0, 2500);
+        await page.waitForTimeout(1200);
+    }
+    await page.waitForTimeout(6000);
+
+    const bubbles = page.locator('#entity-bubbles-container');
+    const shown = await bubbles.locator('[data-entity-index]').allInnerTexts();
+
+    // Several requests raced; only the newest may show.
+    expect(n).toBeGreaterThan(1);
+    expect(shown.length).toBeGreaterThan(0);
+    const newest = `req-${n - 1}`;
+    expect(shown.map((t) => t.trim())).toEqual([newest]);
+});
+
 test('applies the selected theme to bubble colors and the accent gradient', async ({ context, background }) => {
     await context.route(DEEPSEEK_URL, (route) =>
         route.fulfill(streamEntities([TEST_ENTITY])));

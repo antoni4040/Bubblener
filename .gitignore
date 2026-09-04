@@ -17,6 +17,11 @@ stats-*.json
 .wxt
 web-ext.config.ts
 
+# Real API keys for the live provider tests. Never commit these.
+.env
+.env.*
+!.env.example
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

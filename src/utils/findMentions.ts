@@ -19,14 +19,36 @@ const BLOCK_CONTAINER = [
     'table', 'td', 'th', 'tr', 'ul',
 ].join(',');
 
-// A model that returns "he" or "the man" as a surface form would light up half
-// the page, so those are dropped rather than trusted.
+// Generic phrases that pass the structural test below but still refer to
+// whoever the sentence happens to be about.
 const TOO_COMMON = new Set([
     'he', 'she', 'it', 'they', 'him', 'her', 'them', 'his', 'hers', 'their',
     'i', 'we', 'us', 'you', 'this', 'that', 'these', 'those', 'who', 'which',
     'the man', 'the woman', 'the company', 'the city', 'the country',
     'the young man', 'the old man', 'the old woman', 'the girl', 'the boy',
+    'the other', 'the others', 'the same', 'the first', 'the last',
 ]);
+
+const HAS_UPPER = /\p{Lu}/u;
+const HAS_CASE = /\p{Lu}|\p{Ll}/u;
+
+/**
+ * Can this string identify one particular entity?
+ *
+ * A blocklist alone is whack-a-mole — "himself" got through it and highlighted
+ * every reflexive on the page, including the ones referring to somebody else.
+ * The structural rule catches the whole class: a usable surface form is either
+ * a proper noun (has a capital) or a phrase of several words ("the
+ * pawnbroker"). One lowercase word can never pin down a specific entity.
+ *
+ * Scripts without letter case (Chinese, Japanese) are exempt from the capital
+ * requirement — there is no capital to ask for.
+ */
+const isIdentifying = (term: string): boolean => {
+    if (term.split(/\s+/).length > 1) return true;
+    if (!HAS_CASE.test(term)) return true;
+    return HAS_UPPER.test(term);
+};
 
 /** Filters surface forms that would match far more than the entity. */
 export const usableTerms = (terms: string[]): string[] => {
@@ -36,6 +58,7 @@ export const usableTerms = (terms: string[]): string[] => {
         .filter((term) => {
             const key = term.toLowerCase();
             if (term.length < 2 || TOO_COMMON.has(key) || seen.has(key)) return false;
+            if (!isIdentifying(term)) return false;
             seen.add(key);
             return true;
         });

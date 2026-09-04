@@ -159,6 +159,9 @@ describe('DeepSeekAPIRequest', () => {
         // are what keep responses parseable.
         expect(call.response_format).toEqual({ type: 'json_object' });
         expect(call.max_tokens).toBeGreaterThanOrEqual(8192);
+        // v4 thinks by default and bills it as output: measured at 3,510
+        // output tokens and ~29s for three entities before this was turned off.
+        expect(call.thinking).toEqual({ type: 'disabled' });
         expect(result.text).toBe('{"entities":[]}');
         expect(result.usage).toEqual({ input: 210, output: 60 });
     });

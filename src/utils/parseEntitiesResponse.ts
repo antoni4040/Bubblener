@@ -8,9 +8,39 @@ const PLACEHOLDERS = new Set(['null', 'none', 'n/a', 'na', 'nil', 'undefined', '
 const emptyToNull = (value: string | null): string | null =>
     value === null || PLACEHOLDERS.has(value.trim().toLowerCase()) ? null : value;
 
+const ENTITY_TYPES = ['Person', 'Organization', 'Location', 'Key Concept/Theme'] as const;
+type EntityType = typeof ENTITY_TYPES[number];
+
+/** Things the models actually answer that mean one of our four categories. */
+const TYPE_SYNONYMS: Record<string, EntityType> = {
+    people: 'Person', human: 'Person', character: 'Person', individual: 'Person',
+    organisation: 'Organization', company: 'Organization', institution: 'Organization',
+    group: 'Organization', family: 'Organization',
+    place: 'Location', city: 'Location', country: 'Location', building: 'Location',
+    setting: 'Location',
+    concept: 'Key Concept/Theme', theme: 'Key Concept/Theme', idea: 'Key Concept/Theme',
+    event: 'Key Concept/Theme', object: 'Key Concept/Theme', thing: 'Key Concept/Theme',
+    artifact: 'Key Concept/Theme', work: 'Key Concept/Theme', motif: 'Key Concept/Theme',
+};
+
+/**
+ * Maps whatever the model called it onto our four categories.
+ *
+ * Only Gemini has the enum enforced by its schema; the others are guided by
+ * the prompt alone and reach for categories we do not offer — a novel is full
+ * of significant *objects* (an axe, an ikon) with nowhere else to go. Rejecting
+ * those used to discard the entire response along with them.
+ */
+const normalizeEntityType = (value: string): EntityType => {
+    const trimmed = value.trim();
+    const exact = ENTITY_TYPES.find((type) => type.toLowerCase() === trimmed.toLowerCase());
+    if (exact) return exact;
+    return TYPE_SYNONYMS[trimmed.toLowerCase()] ?? 'Key Concept/Theme';
+};
+
 export const EntitySchema = z.object({
     entity_name: z.string(),
-    entity_type: z.enum(['Person', 'Organization', 'Location', 'Key Concept/Theme']),
+    entity_type: z.string().transform(normalizeEntityType),
     // Optional: older cached payloads predate it, and not every provider
     // reliably returns it.
     mentions: z.array(z.string()).optional(),
@@ -21,8 +51,6 @@ export const EntitySchema = z.object({
     summary_from_text: z.string(),
     contextual_enrichment: z.string().nullable().transform(emptyToNull),
 });
-
-const EntityArraySchema = z.array(EntitySchema);
 
 // Strips Markdown code fences (```json ... ``` or ``` ... ```) that LLMs
 // sometimes wrap JSON responses in, regardless of surrounding whitespace.
@@ -92,12 +120,26 @@ export const parseEntitiesResponse = (raw: string): Entity[] => {
         throw new Error('Invalid response format: expected an array of entities or an object with an "entities" array.');
     }
 
-    const result = EntityArraySchema.safeParse(candidate);
-    if (!result.success) {
-        throw new Error(`Invalid entity shape in response: ${result.error.message}`);
+    // Validated one at a time, deliberately. Validating the array as a whole
+    // meant a single malformed entity threw away every good one beside it —
+    // three odd `entity_type` values once discarded a whole page's worth.
+    const entities: Entity[] = [];
+    const problems: string[] = [];
+
+    for (const [index, raw] of (candidate as unknown[]).entries()) {
+        const parsed = EntitySchema.safeParse(raw);
+        if (parsed.success) entities.push(parsed.data as Entity);
+        else problems.push(`#${index}: ${parsed.error.issues[0]?.message ?? 'invalid'}`);
     }
 
-    return result.data as Entity[];
+    if (!entities.length && problems.length) {
+        throw new Error(`Invalid entity shape in response: ${problems.join('; ')}`);
+    }
+    if (problems.length) {
+        console.warn(`[Bubblener] dropped ${problems.length} malformed entities: ${problems.join('; ')}`);
+    }
+
+    return entities;
 };
 
 export default parseEntitiesResponse;

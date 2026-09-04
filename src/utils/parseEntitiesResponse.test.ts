@@ -55,8 +55,40 @@ describe('parseEntitiesResponse', () => {
         expect(() => parseEntitiesResponse(raw)).toThrow(/Invalid entity shape/);
     });
 
-    it('throws when entity_type is not one of the allowed categories', () => {
-        const raw = JSON.stringify([{ ...validEntity, entity_type: 'Not A Category' }]);
+    it('folds an invented category into Key Concept/Theme', () => {
+        // A novel is full of significant objects with nowhere else to go, and
+        // models answer "Object" — which used to void the whole response.
+        const raw = JSON.stringify([{ ...validEntity, entity_type: 'Object' }]);
+        expect(parseEntitiesResponse(raw)[0].entity_type).toBe('Key Concept/Theme');
+    });
+
+    it('recognises common synonyms for the four categories', () => {
+        const cases: [string, string][] = [
+            ['organisation', 'Organization'],
+            ['place', 'Location'],
+            ['character', 'Person'],
+            ['event', 'Key Concept/Theme'],
+            ['PERSON', 'Person'],
+        ];
+        for (const [given, expected] of cases) {
+            const raw = JSON.stringify([{ ...validEntity, entity_type: given }]);
+            expect(parseEntitiesResponse(raw)[0].entity_type, given).toBe(expected);
+        }
+    });
+
+    it('keeps the good entities when one of them is malformed', () => {
+        // The reported failure: three bad entity_types discarded a whole page.
+        const raw = JSON.stringify([
+            validEntity,
+            { ...validEntity, entity_name: 'Broken', description: 42 },
+            { ...validEntity, entity_name: 'Also Fine' },
+        ]);
+        const entities = parseEntitiesResponse(raw);
+        expect(entities.map((e) => e.entity_name)).toEqual(['Acme Corporation', 'Also Fine']);
+    });
+
+    it('still throws when every entity is malformed', () => {
+        const raw = JSON.stringify([{ entity_name: 'Only' }, { entity_name: 'Bad' }]);
         expect(() => parseEntitiesResponse(raw)).toThrow(/Invalid entity shape/);
     });
 

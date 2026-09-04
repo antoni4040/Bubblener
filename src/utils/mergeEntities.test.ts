@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import mergeEntities, { RankedEntity } from '@/utils/mergeEntities';
+import entityKey from '@/utils/entityKey';
 import Entity from '@/utils/types/Entity';
 
 const make = (name: string, importance?: number, description = 'd'): Entity => ({
@@ -81,5 +82,42 @@ describe('mergeEntities', () => {
             10, 1,
         );
         expect(names(result)).toEqual(['A']);
+    });
+
+    it('keeps a starred entity even when it would lose on score', () => {
+        const pinned = new Set([entityKey('Beloved')]);
+        const result = mergeEntities(
+            [make('Beloved', 0.01)], [make('Strong', 0.99)], 1, 0, { pinned },
+        );
+        expect(names(result)).toEqual(['Beloved', 'Strong']);
+    });
+
+    it('does not let starred entities consume the limit for the rest', () => {
+        const pinned = new Set([entityKey('Pinned')]);
+        const result = mergeEntities(
+            [make('Pinned', 0.01)],
+            [make('A', 0.9), make('B', 0.8)],
+            2, 0, { pinned },
+        );
+        expect(names(result)).toEqual(['Pinned', 'A', 'B']);
+    });
+
+    it('drops a hidden entity on arrival', () => {
+        const hidden = new Set([entityKey('Noise')]);
+        const result = mergeEntities([], [make('Signal', 0.5), make('Noise', 0.9)], 10, 0, { hidden });
+        expect(names(result)).toEqual(['Signal']);
+    });
+
+    it('removes an entity hidden after it was already shown', () => {
+        // Hiding must apply retroactively, not just to future batches.
+        const hidden = new Set([entityKey('Regret')]);
+        const result = mergeEntities([make('Keep'), make('Regret')], [], 10, 1, { hidden });
+        expect(names(result)).toEqual(['Keep']);
+    });
+
+    it('matches starred and hidden names regardless of case or spacing', () => {
+        const hidden = new Set([entityKey('Marfa  Petrovna')]);
+        const result = mergeEntities([], [make('marfa petrovna')], 10, 0, { hidden });
+        expect(result).toHaveLength(0);
     });
 });

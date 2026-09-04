@@ -1,4 +1,5 @@
 import Entity from '@/utils/types/Entity';
+import entityKey from '@/utils/entityKey';
 
 export interface RankedEntity extends Entity {
     /** Which batch this arrived in, for recency weighting. */
@@ -17,7 +18,7 @@ const RECENCY_DECAY = 0.75;
 /** Used when a model omits the field, so it neither wins nor loses outright. */
 const DEFAULT_IMPORTANCE = 0.5;
 
-const key = (entity: Entity) => entity.entity_name.trim().toLowerCase();
+const key = (entity: Entity) => entityKey(entity.entity_name);
 
 const score = (entity: RankedEntity, batch: number): number => {
     const importance = entity.importance ?? DEFAULT_IMPORTANCE;
@@ -34,11 +35,19 @@ const score = (entity: RankedEntity, batch: number): number => {
  * only *which* entities survive the cap, so what drops off is the least
  * important thing from the furthest-back section rather than simply the oldest.
  */
+export interface MergeOptions {
+    /** Starred: never evicted, and not counted against the cap. */
+    pinned?: Set<string>;
+    /** Hidden: dropped on arrival and removed if already shown. */
+    hidden?: Set<string>;
+}
+
 export const mergeEntities = (
     current: RankedEntity[],
     incoming: Entity[],
     max: number,
     batch: number,
+    { pinned, hidden }: MergeOptions = {},
 ): RankedEntity[] => {
     const byKey = new Map<string, RankedEntity>();
     for (const entity of current) byKey.set(key(entity), entity);
@@ -49,15 +58,28 @@ export const mergeEntities = (
         byKey.set(key(entity), { ...entity, seenAt: batch });
     }
 
+    // Hiding applies retroactively: hiding something already on screen should
+    // remove it, not merely stop it coming back.
+    if (hidden?.size) {
+        for (const entityKeyValue of Array.from(byKey.keys())) {
+            if (hidden.has(entityKeyValue)) byKey.delete(entityKeyValue);
+        }
+    }
+
     const all = Array.from(byKey.values());
-    if (max <= 0 || all.length <= max) return all;
+    const isPinned = (entity: RankedEntity) => pinned?.has(key(entity)) ?? false;
+
+    // Starred entities hold their place unconditionally — the user asked for
+    // them — so the cap governs only the rest.
+    const unpinned = all.filter((entity) => !isPinned(entity));
+    if (max <= 0 || unpinned.length <= max) return all;
 
     const survivors = new Set(
-        all.slice()
+        unpinned.slice()
             .sort((a, b) => score(b, batch) - score(a, batch))
             .slice(0, max)
     );
-    return all.filter((entity) => survivors.has(entity));
+    return all.filter((entity) => isPinned(entity) || survivors.has(entity));
 };
 
 export default mergeEntities;

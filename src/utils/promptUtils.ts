@@ -20,6 +20,13 @@ export interface ProviderRequest {
      * caller decides what a partial buffer is worth.
      */
     onPartial?: (accumulated: string) => void;
+    /**
+     * Cancels the request when the reader has moved on. Scrolling fires a new
+     * analysis while the previous one is still in flight; without this the
+     * abandoned request runs to completion, spends tokens, and delivers
+     * entities for a section already left behind.
+     */
+    signal?: AbortSignal;
 }
 
 const NO_USAGE: TokenUsage = { input: 0, output: 0 };
@@ -56,9 +63,12 @@ const createPrompt = (maxElements: number, withJson: boolean): string => {
         "Acme Corporation").
     3.  **List the surface forms.** mentions must contain the distinct strings
         that literally occur in the text for this entity, including
-        entity_name. Use proper names and specific noun phrases only. Never
-        include pronouns (he, she, it, they) or bare common nouns (the man,
-        the company) — they match far too much.
+        entity_name. Proper names and specific noun phrases only.
+        Never include a pronoun of any kind — not he, she, it, they, him, her,
+        and not reflexives like himself, herself, themselves. Never include a
+        bare common noun (the man, the company). These words point at whoever
+        the sentence happens to be about, so highlighting them marks passages
+        that are about somebody else entirely.
     4.  **Fewer is fine.** Extract at most ${maxElements} entities, ranked by
         significance to this passage. If the passage supports fewer, return
         fewer. Never pad the list to reach the limit.
@@ -84,8 +94,12 @@ const createPrompt = (maxElements: number, withJson: boolean): string => {
       you genuinely lack reliable knowledge of this specific entity: something
       this document invented, an obscure local name, or anything you would be
       guessing at. Never fill it by restating the passage.
-    * **entity_type**: one of **Person**, **Organization**, **Location**, or
-      **Key Concept/Theme** (e.g. "Quantum Entanglement", "Character Arc").`
+    * **entity_type**: exactly one of these four strings, and never any other:
+      **Person**, **Organization**, **Location**, **Key Concept/Theme**.
+      There is no category for physical objects, events or works — a
+      significant axe, letter or ikon belongs under **Key Concept/Theme**.
+      Never invent a category such as "Object" or "Event": an unrecognised
+      value makes the entity unusable.`
 
     if (withJson) {
         return `${prompt}
@@ -111,13 +125,16 @@ const createPrompt = (maxElements: number, withJson: boolean): string => {
     return prompt;
 }
 
-export const GeminiAPIRequest = async ({ text, maxElements, apiKey, model, onPartial }: ProviderRequest): Promise<ProviderResponse> => {
+export const GeminiAPIRequest = async ({ text, maxElements, apiKey, model, onPartial, signal }: ProviderRequest): Promise<ProviderResponse> => {
     const genAI = new GoogleGenAI({ apiKey });
     const stream = await genAI.models.generateContentStream({
         model,
         contents: text,
         config: {
-            abortSignal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+            // Whichever comes first: the timeout, or the reader scrolling on.
+            abortSignal: signal
+                ? AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)])
+                : AbortSignal.timeout(REQUEST_TIMEOUT_MS),
             thinkingConfig: {
                 // Gemini 3.x replaced `thinkingBudget` with `thinkingLevel`,
                 // and no longer allows thinking to be switched off entirely —
@@ -190,7 +207,7 @@ export const GeminiAPIRequest = async ({ text, maxElements, apiKey, model, onPar
     return { text: accumulated, usage };
 }
 
-export const ChatGPTAPIRequest = async ({ text, maxElements, apiKey, model, onPartial }: ProviderRequest): Promise<ProviderResponse> => {
+export const ChatGPTAPIRequest = async ({ text, maxElements, apiKey, model, onPartial, signal }: ProviderRequest): Promise<ProviderResponse> => {
     const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true, timeout: REQUEST_TIMEOUT_MS, maxRetries: MAX_RETRIES });
 
     const stream = await openai.responses.create({
@@ -212,7 +229,7 @@ export const ChatGPTAPIRequest = async ({ text, maxElements, apiKey, model, onPa
         reasoning: {
             effort: "minimal"
         }
-    });
+    }, { signal });
 
     let accumulated = '';
     let usage = NO_USAGE;
@@ -244,12 +261,13 @@ const streamChatCompletion = async (
     body: Record<string, unknown>,
     onPartial: ((accumulated: string) => void) | undefined,
     includeUsage: boolean,
+    signal?: AbortSignal,
 ): Promise<ProviderResponse> => {
     const stream = await openai.chat.completions.create({
         ...body,
         stream: true,
         ...(includeUsage ? { stream_options: { include_usage: true } } : {}),
-    } as any);
+    } as any, { signal });
 
     let accumulated = '';
     let usage = NO_USAGE;
@@ -270,7 +288,10 @@ const streamChatCompletion = async (
     return { text: accumulated, usage };
 };
 
-export const DeepSeekAPIRequest = async ({ text, maxElements, apiKey, model, onPartial }: ProviderRequest): Promise<ProviderResponse> => {
+/** DeepSeek's non-standard switch for turning thinking mode off. */
+const NO_THINKING = { thinking: { type: 'disabled' } } as {};
+
+export const DeepSeekAPIRequest = async ({ text, maxElements, apiKey, model, onPartial, signal }: ProviderRequest): Promise<ProviderResponse> => {
     const openai = new OpenAI({
         baseURL: 'https://api.deepseek.com',
         apiKey: apiKey,
@@ -289,7 +310,13 @@ export const DeepSeekAPIRequest = async ({ text, maxElements, apiKey, model, onP
         // The default output cap truncates mid-object once maxElements grows,
         // and a truncated object is invalid JSON.
         max_tokens: 8192,
-    }, onPartial, true);
+        // DeepSeek v4 thinks by default and bills the thinking as completion
+        // tokens: measured at 3,510 output tokens for three entities on a
+        // two-sentence passage, and ~29s per call. Extraction needs no
+        // deliberation. Spread rather than declared, since `thinking` is a
+        // DeepSeek extension the OpenAI types do not carry.
+        ...NO_THINKING,
+    }, onPartial, true, signal);
 };
 /**
  * Ollama, through its OpenAI-compatible router at /v1.
@@ -297,7 +324,7 @@ export const DeepSeekAPIRequest = async ({ text, maxElements, apiKey, model, onP
  * The API key is required by the SDK but ignored by Ollama, and nothing leaves
  * the machine — which is the whole point of this provider.
  */
-export const OllamaAPIRequest = async ({ text, maxElements, model, onPartial }: ProviderRequest): Promise<ProviderResponse> => {
+export const OllamaAPIRequest = async ({ text, maxElements, model, onPartial, signal }: ProviderRequest): Promise<ProviderResponse> => {
     const openai = new OpenAI({
         baseURL: 'http://localhost:11434/v1',
         apiKey: 'ollama',
@@ -314,5 +341,5 @@ export const OllamaAPIRequest = async ({ text, maxElements, model, onPartial }: 
         max_tokens: 8192,
         // Small local models drift into invalid JSON at higher temperatures.
         temperature: 0,
-    }, onPartial, false);
+    }, onPartial, false, signal);
 };
