@@ -8,12 +8,15 @@ const PLACEHOLDERS = new Set(['null', 'none', 'n/a', 'na', 'nil', 'undefined', '
 const emptyToNull = (value: string | null): string | null =>
     value === null || PLACEHOLDERS.has(value.trim().toLowerCase()) ? null : value;
 
-const EntitySchema = z.object({
+export const EntitySchema = z.object({
     entity_name: z.string(),
     entity_type: z.enum(['Person', 'Organization', 'Location', 'Key Concept/Theme']),
     // Optional: older cached payloads predate it, and not every provider
     // reliably returns it.
     mentions: z.array(z.string()).optional(),
+    // Optional, and clamped: models occasionally answer 1-10 or overshoot.
+    importance: z.number().optional()
+        .transform((value) => value === undefined ? undefined : Math.min(1, Math.max(0, value))),
     description: z.string(),
     summary_from_text: z.string(),
     contextual_enrichment: z.string().nullable().transform(emptyToNull),

@@ -21,6 +21,22 @@ const TEST_ENTITY = {
     contextual_enrichment: null,
 };
 
+
+/**
+ * The providers stream now, so a plain JSON body is never parsed. This builds
+ * the server-sent-events body an OpenAI-compatible stream actually returns.
+ */
+const sseBody = (content: string, usage = { prompt_tokens: 10, completion_tokens: 5 }) =>
+    `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`
+    + `data: ${JSON.stringify({ choices: [], usage })}\n\n`
+    + 'data: [DONE]\n\n';
+
+const streamEntities = (entities: unknown[]) => ({
+    status: 200,
+    headers: { 'content-type': 'text/event-stream' },
+    body: sseBody(JSON.stringify({ entities })),
+});
+
 // Sets up storage (API key + provider, plus any extra overrides such as
 // theme/bubbleColors) and serves the fake article page, then activates the
 // extension on it via the real background code path.
@@ -56,12 +72,7 @@ const activateOnArticle = async (
 
 test('renders an entity bubble and opens its detail modal', async ({ context, background }) => {
     await context.route(DEEPSEEK_URL, (route) =>
-        route.fulfill({
-            json: {
-                choices: [{ message: { content: JSON.stringify({ entities: [TEST_ENTITY] }) } }],
-            },
-        })
-    );
+        route.fulfill(streamEntities([TEST_ENTITY])));
 
     const page = await activateOnArticle({ context, background });
 
@@ -120,14 +131,183 @@ test('explains a network failure instead of passing "Failed to fetch" through', 
     await expect(page.getByText('Processing entities...')).toHaveCount(0);
 });
 
+test('accumulates entities across sections instead of replacing them', async ({ context, background }) => {
+    // Streaming itself is covered by unit tests (promptUtils reports each
+    // partial; streamEntities extracts entities from an incomplete buffer).
+    // What matters here is the visible consequence: nothing already on screen
+    // disappears when the next batch arrives.
+    const entity = (name: string) => ({
+        entity_name: name, entity_type: 'Person', mentions: [name],
+        description: `${name} appears here.`, summary_from_text: 's',
+        contextual_enrichment: null,
+    });
+
+    const batches = [['Raskolnikov', 'Dounia'], ['Razumihin', 'Sonia']];
+    let call = 0;
+    await context.route(DEEPSEEK_URL, (route) => {
+        const names = batches[Math.min(call++, batches.length - 1)];
+        // The SDK is streaming, so answer with an SSE body.
+        return route.fulfill(streamEntities(names.map(entity)));
+    });
+
+    const LONG_URL = 'https://example.com/sections';
+    await context.route(LONG_URL, (route) => route.fulfill({
+        contentType: 'text/html',
+        body: `<!DOCTYPE html><html><body style="font-size:18px;line-height:1.8"><article>`
+            + Array.from({ length: 60 }, (_, i) =>
+                `<h2>Part ${i + 1}</h2><p>Raskolnikov and Razumihin spoke at length in part ${i + 1}.</p>`).join('')
+            + `</article></body></html>`,
+    }));
+    await background.evaluate(() =>
+        chrome.storage.local.set({ apiKey: 'test-key', modelAPI: 'DeepSeek' }));
+
+    const page = await context.newPage();
+    await page.goto(LONG_URL);
+    const tabId = await background.evaluate(async (url: string) => {
+        const tabs = await chrome.tabs.query({ url });
+        return tabs[0]?.id as number;
+    }, LONG_URL);
+    await background.evaluate(
+        ({ id, url }: { id: number; url: string }) => (self as any).__bubblenerTestActivate({ id, url }),
+        { id: tabId as number, url: LONG_URL }
+    );
+
+    const bubbles = page.locator('#entity-bubbles-container');
+    await expect(bubbles.getByText('Raskolnikov', { exact: true })).toBeVisible();
+    await expect(bubbles.getByText('Dounia', { exact: true })).toBeVisible();
+
+    // Read on: a fresh section yields different entities.
+    for (let i = 0; i < 3; i++) {
+        await page.mouse.wheel(0, 1600);
+        await page.waitForTimeout(900);
+    }
+
+    await expect(bubbles.getByText('Razumihin', { exact: true })).toBeVisible();
+    // ...and the first section's entities are still listed.
+    await expect(bubbles.getByText('Raskolnikov', { exact: true })).toBeVisible();
+    await expect(bubbles.getByText('Dounia', { exact: true })).toBeVisible();
+});
+
+test('honours Max Number of Elements, keeping the most important', async ({ context, background }) => {
+    const entity = (name: string, importance: number) => ({
+        entity_name: name, entity_type: 'Person', mentions: [name], importance,
+        description: `${name} appears here.`, summary_from_text: 's',
+        contextual_enrichment: null,
+    });
+
+    // Two sections, three entities each, but only three bubbles allowed.
+    const batches = [
+        [entity('Central', 0.95), entity('Minor', 0.1), entity('Passing', 0.05)],
+        [entity('NewLead', 0.9), entity('Bystander', 0.08), entity('Extra', 0.02)],
+    ];
+    let call = 0;
+    await context.route(DEEPSEEK_URL, (route) =>
+        route.fulfill(streamEntities(batches[Math.min(call++, 1)])));
+
+    const LONG_URL = 'https://example.com/ranked';
+    await context.route(LONG_URL, (route) => route.fulfill({
+        contentType: 'text/html',
+        body: `<!DOCTYPE html><html><body style="font-size:18px;line-height:1.8"><article>`
+            + Array.from({ length: 60 }, (_, i) =>
+                `<h2>Part ${i + 1}</h2><p>Central and NewLead spoke in part ${i + 1}.</p>`).join('')
+            + `</article></body></html>`,
+    }));
+    await background.evaluate(() => chrome.storage.local.set({
+        apiKey: 'test-key', modelAPI: 'DeepSeek', maxNumberOfElements: 3,
+    }));
+
+    const page = await context.newPage();
+    await page.goto(LONG_URL);
+    const tabId = await background.evaluate(async (url: string) => {
+        const tabs = await chrome.tabs.query({ url });
+        return tabs[0]?.id as number;
+    }, LONG_URL);
+    await background.evaluate(
+        ({ id, url }: { id: number; url: string }) => (self as any).__bubblenerTestActivate({ id, url }),
+        { id: tabId as number, url: LONG_URL }
+    );
+
+    const bubbles = page.locator('#entity-bubbles-container');
+    await expect(bubbles.getByText('Central', { exact: true })).toBeVisible();
+
+    for (let i = 0; i < 3; i++) {
+        await page.mouse.wheel(0, 1600);
+        await page.waitForTimeout(900);
+    }
+    await expect(bubbles.getByText('NewLead', { exact: true })).toBeVisible();
+
+    // Never more than the configured limit, however many sections were read.
+    const shown = await bubbles.locator('[data-entity-index]').count();
+    expect(shown).toBeLessThanOrEqual(3);
+
+    // The strong entity from section one held its slot; the filler did not.
+    await expect(bubbles.getByText('Central', { exact: true })).toBeVisible();
+    await expect(bubbles.getByText('Passing', { exact: true })).toHaveCount(0);
+    await expect(bubbles.getByText('Extra', { exact: true })).toHaveCount(0);
+});
+
+test('retires entities left screens behind, however important', async ({ context, background }) => {
+    // The shape of the reported bug: names from the introduction still sitting
+    // in the list while the reader is deep into chapter four.
+    const entity = (name: string, importance: number) => ({
+        entity_name: name, entity_type: 'Person', mentions: [name], importance,
+        description: `${name} appears here.`, summary_from_text: 's',
+        contextual_enrichment: null,
+    });
+
+    // Deliberately the *most* important entities, so only distance can retire
+    // them — ranking alone would keep them forever.
+    const batches = [
+        [entity('Dostoevsky', 1.0), entity('Nekrassov', 0.95)],
+        [entity('Porfiry', 0.6)],
+    ];
+    let call = 0;
+    await context.route(DEEPSEEK_URL, (route) =>
+        route.fulfill(streamEntities(batches[Math.min(call++, 1)])));
+
+    const LONG_URL = 'https://example.com/novel';
+    await context.route(LONG_URL, (route) => route.fulfill({
+        contentType: 'text/html',
+        body: `<!DOCTYPE html><html><body style="font-size:18px;line-height:1.9">
+            <article>
+              <h1>Introduction</h1>
+              <p>Dostoevsky and Nekrassov are discussed only here, at the very front.</p>`
+            + Array.from({ length: 120 }, (_, i) =>
+                `<h2>Chapter ${i + 1}</h2><p>Porfiry questioned him again in chapter ${i + 1}, at length and without haste.</p>`).join('')
+            + `</article></body></html>`,
+    }));
+    await background.evaluate(() => chrome.storage.local.set({
+        apiKey: 'test-key', modelAPI: 'DeepSeek', maxNumberOfElements: 8,
+    }));
+
+    const page = await context.newPage();
+    await page.goto(LONG_URL);
+    const tabId = await background.evaluate(async (url: string) => {
+        const tabs = await chrome.tabs.query({ url });
+        return tabs[0]?.id as number;
+    }, LONG_URL);
+    await background.evaluate(
+        ({ id, url }: { id: number; url: string }) => (self as any).__bubblenerTestActivate({ id, url }),
+        { id: tabId as number, url: LONG_URL }
+    );
+
+    const bubbles = page.locator('#entity-bubbles-container');
+    await expect(bubbles.getByText('Dostoevsky', { exact: true })).toBeVisible();
+
+    // Read far past the introduction.
+    for (let i = 0; i < 6; i++) {
+        await page.mouse.wheel(0, 3000);
+        await page.waitForTimeout(700);
+    }
+
+    await expect(bubbles.getByText('Porfiry', { exact: true })).toBeVisible();
+    await expect(bubbles.getByText('Dostoevsky', { exact: true })).toHaveCount(0);
+    await expect(bubbles.getByText('Nekrassov', { exact: true })).toHaveCount(0);
+});
+
 test('applies the selected theme to bubble colors and the accent gradient', async ({ context, background }) => {
     await context.route(DEEPSEEK_URL, (route) =>
-        route.fulfill({
-            json: {
-                choices: [{ message: { content: JSON.stringify({ entities: [TEST_ENTITY] }) } }],
-            },
-        })
-    );
+        route.fulfill(streamEntities([TEST_ENTITY])));
 
     const page = await activateOnArticle({ context, background }, {
         theme: 'Cyberpunk',
@@ -195,9 +375,7 @@ const recordPayloads = async (context: any) => {
     const payloads: string[] = [];
     await context.route(DEEPSEEK_URL, (route: any) => {
         payloads.push(route.request().postData() || '');
-        return route.fulfill({
-            json: { choices: [{ message: { content: JSON.stringify({ entities: [TEST_ENTITY] }) } }] },
-        });
+        return route.fulfill(streamEntities([TEST_ENTITY]));
     });
     return payloads;
 };

@@ -4,6 +4,7 @@ import timingStats from '@/utils/storage/timingStats';
 import { estimateMs, recordSample } from '@/utils/timing';
 import { logRequest, logResponse, logFailure } from '@/utils/logger';
 import { REQUEST_TIMEOUT_MS } from '@/utils/promptUtils';
+import extractStreamedEntities from '@/utils/streamEntities';
 import modelTier from '@/utils/storage/modelTier';
 import ollamaModel from '@/utils/storage/ollamaModel';
 import parseEntitiesResponse from '@/utils/parseEntitiesResponse';
@@ -199,15 +200,33 @@ export default defineBackground(() => {
     }
 
     try {
+      // Push entities to the page the moment each one is complete, rather than
+      // holding the whole set back until the model stops talking.
+      let streamed = 0;
+      const onPartial = (accumulated: string) => {
+        const ready = extractStreamedEntities(accumulated);
+        if (ready.length <= streamed || !sender.tab?.id) return;
+        const fresh = ready.slice(streamed);
+        streamed = ready.length;
+        browser.tabs.sendMessage(sender.tab.id, {
+          entities: { nodes: fresh, links: [] },
+          streaming: true,
+        }).catch(() => { /* page navigated away mid-stream */ });
+      };
+
+      const providerRequest = {
+        text: request.text, maxElements, apiKey: currentApiKey, model, onPartial,
+      };
+
       let response: ProviderResponse | undefined;
       if (currentModelAPI === ModelAPIsEnum.ChatGPT) {
-        response = await ChatGPTAPIRequest(request.text, maxElements, currentApiKey, model);
+        response = await ChatGPTAPIRequest(providerRequest);
       } else if (currentModelAPI === ModelAPIsEnum.Gemini) {
-        response = await GeminiAPIRequest(request.text, maxElements, currentApiKey, model);
+        response = await GeminiAPIRequest(providerRequest);
       } else if (currentModelAPI === ModelAPIsEnum.DeepSeek) {
-        response = await DeepSeekAPIRequest(request.text, maxElements, currentApiKey, model);
+        response = await DeepSeekAPIRequest(providerRequest);
       } else if (currentModelAPI === ModelAPIsEnum.Ollama) {
-        response = await OllamaAPIRequest(request.text, maxElements, currentApiKey, model);
+        response = await OllamaAPIRequest(providerRequest);
       }
 
       if (!response) {
@@ -215,6 +234,8 @@ export default defineBackground(() => {
       }
 
       const durationMs = Date.now() - startedAt;
+      // The full parse is still authoritative: it validates the whole payload
+      // and repairs near-miss JSON the incremental scan skipped over.
       const entities = parseEntitiesResponse(response.text);
       logResponse(model, durationMs, response.usage, entities.length);
 
@@ -236,6 +257,7 @@ export default defineBackground(() => {
           entities: { nodes: entities, links: [] },
           usage: response.usage,
           durationMs,
+          complete: true,
         });
       }
     } catch (error: any) {

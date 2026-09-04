@@ -9,6 +9,19 @@ export interface ProviderResponse {
     usage: TokenUsage;
 }
 
+export interface ProviderRequest {
+    text: string;
+    maxElements: number;
+    apiKey: string;
+    model: string;
+    /**
+     * Called with the whole response accumulated so far, each time more of it
+     * arrives. Providers stream raw text and stay ignorant of entities; the
+     * caller decides what a partial buffer is worth.
+     */
+    onPartial?: (accumulated: string) => void;
+}
+
 const NO_USAGE: TokenUsage = { input: 0, output: 0 };
 
 /** Without this a hung request leaves the page spinning indefinitely. */
@@ -49,8 +62,14 @@ const createPrompt = (maxElements: number, withJson: boolean): string => {
     4.  **Fewer is fine.** Extract at most ${maxElements} entities, ranked by
         significance to this passage. If the passage supports fewer, return
         fewer. Never pad the list to reach the limit.
+    5.  **Score the significance.** importance is a number from 0.0 to 1.0
+        saying how central this entity is to *this* passage — not how famous it
+        is in general. A protagonist driving the scene is near 1.0; someone
+        named once in passing is near 0.1. Spread the scores out; do not give
+        everything 0.8.
 
     # FIELDS:
+    * **importance**: a number in [0.0, 1.0], as described in rule 5.
     * **description**: a single concise sentence defining the entity's role as
       presented in the text.
     * **summary_from_text**: a 3-4 sentence paragraph supported by the provided
@@ -79,6 +98,7 @@ const createPrompt = (maxElements: number, withJson: boolean): string => {
                     "entity_name": "string",
                     "entity_type": "string",
                     "mentions": ["string"],
+                    "importance": 0.0,
                     "description": "string",
                     "summary_from_text": "string",
                     "contextual_enrichment": "string, or the literal null"
@@ -91,9 +111,9 @@ const createPrompt = (maxElements: number, withJson: boolean): string => {
     return prompt;
 }
 
-export const GeminiAPIRequest = async (text: string, maxElements: number, apiKey: string, model: string): Promise<ProviderResponse> => {
+export const GeminiAPIRequest = async ({ text, maxElements, apiKey, model, onPartial }: ProviderRequest): Promise<ProviderResponse> => {
     const genAI = new GoogleGenAI({ apiKey });
-    const response = await genAI.models.generateContent({
+    const stream = await genAI.models.generateContentStream({
         model,
         contents: text,
         config: {
@@ -124,6 +144,9 @@ export const GeminiAPIRequest = async (text: string, maxElements: number, apiKey
                             type: Type.ARRAY,
                             items: { type: Type.STRING },
                         },
+                        importance: {
+                            type: Type.NUMBER,
+                        },
                         description: {
                             type: Type.STRING,
                         },
@@ -138,25 +161,40 @@ export const GeminiAPIRequest = async (text: string, maxElements: number, apiKey
                         },
                     },
                     propertyOrdering: ["entity_name", "entity_type", "mentions",
-                        "description", "summary_from_text", "contextual_enrichment"],
+                        "importance", "description", "summary_from_text",
+                        "contextual_enrichment"],
                 },
             },
         }
     });
 
-    return {
-        text: response.text ?? "",
-        usage: {
-            input: response.usageMetadata?.promptTokenCount ?? 0,
-            output: response.usageMetadata?.candidatesTokenCount ?? 0,
-        },
-    };
+    let accumulated = '';
+    let usage = NO_USAGE;
+    for await (const chunk of stream) {
+        // Usage-only chunks carry no text; re-scanning for entities then is
+        // pure waste.
+        const piece = chunk.text ?? '';
+        if (piece) {
+            accumulated += piece;
+            onPartial?.(accumulated);
+        }
+        // Usage arrives on the final chunk, so keep the latest seen.
+        if (chunk.usageMetadata) {
+            usage = {
+                input: chunk.usageMetadata.promptTokenCount ?? 0,
+                output: chunk.usageMetadata.candidatesTokenCount ?? 0,
+            };
+        }
+    }
+
+    return { text: accumulated, usage };
 }
 
-export const ChatGPTAPIRequest = async (text: string, maxElements: number, apiKey: string, model: string): Promise<ProviderResponse> => {
+export const ChatGPTAPIRequest = async ({ text, maxElements, apiKey, model, onPartial }: ProviderRequest): Promise<ProviderResponse> => {
     const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true, timeout: REQUEST_TIMEOUT_MS, maxRetries: MAX_RETRIES });
 
-    const response = await openai.responses.parse({
+    const stream = await openai.responses.create({
+        stream: true,
         model,
         input: [
             {
@@ -176,16 +214,63 @@ export const ChatGPTAPIRequest = async (text: string, maxElements: number, apiKe
         }
     });
 
-    return {
-        text: response.output_text ?? "",
-        usage: {
-            input: response.usage?.input_tokens ?? 0,
-            output: response.usage?.output_tokens ?? 0,
-        },
-    };
+    let accumulated = '';
+    let usage = NO_USAGE;
+    for await (const event of stream) {
+        if (event.type === 'response.output_text.delta') {
+            accumulated += event.delta;
+            onPartial?.(accumulated);
+        } else if (event.type === 'response.completed') {
+            usage = {
+                input: event.response.usage?.input_tokens ?? 0,
+                output: event.response.usage?.output_tokens ?? 0,
+            };
+        }
+    }
+
+    return { text: accumulated, usage };
 };
 
-export const DeepSeekAPIRequest = async (text: string, maxElements: number, apiKey: string, model: string): Promise<ProviderResponse> => {
+
+/**
+ * Shared streaming loop for the OpenAI-compatible providers.
+ *
+ * `include_usage` is opt-in: DeepSeek documents it, Ollama does not list it,
+ * and an unknown parameter can be rejected outright. Omitting it costs nothing
+ * — if a server volunteers usage on the final chunk, the loop still takes it.
+ */
+const streamChatCompletion = async (
+    openai: OpenAI,
+    body: Record<string, unknown>,
+    onPartial: ((accumulated: string) => void) | undefined,
+    includeUsage: boolean,
+): Promise<ProviderResponse> => {
+    const stream = await openai.chat.completions.create({
+        ...body,
+        stream: true,
+        ...(includeUsage ? { stream_options: { include_usage: true } } : {}),
+    } as any);
+
+    let accumulated = '';
+    let usage = NO_USAGE;
+    for await (const chunk of stream as any) {
+        const piece = chunk.choices?.[0]?.delta?.content ?? '';
+        if (piece) {
+            accumulated += piece;
+            onPartial?.(accumulated);
+        }
+        if (chunk.usage) {
+            usage = {
+                input: chunk.usage.prompt_tokens ?? 0,
+                output: chunk.usage.completion_tokens ?? 0,
+            };
+        }
+    }
+
+    return { text: accumulated, usage };
+};
+
+export const DeepSeekAPIRequest = async ({ text, maxElements, apiKey, model, onPartial }: ProviderRequest): Promise<ProviderResponse> => {
     const openai = new OpenAI({
         baseURL: 'https://api.deepseek.com',
         apiKey: apiKey,
@@ -194,7 +279,7 @@ export const DeepSeekAPIRequest = async (text: string, maxElements: number, apiK
         maxRetries: MAX_RETRIES
     });
 
-    const response = await openai.chat.completions.create({
+    return streamChatCompletion(openai, {
         messages: [{ role: "system", content: createPrompt(maxElements, true) },
         { role: "user", content: text }],
         model,
@@ -204,15 +289,7 @@ export const DeepSeekAPIRequest = async (text: string, maxElements: number, apiK
         // The default output cap truncates mid-object once maxElements grows,
         // and a truncated object is invalid JSON.
         max_tokens: 8192,
-    });
-
-    return {
-        text: response.choices[0]?.message.content ?? "",
-        usage: {
-            input: response.usage?.prompt_tokens ?? 0,
-            output: response.usage?.completion_tokens ?? 0,
-        },
-    };
+    }, onPartial, true);
 };
 /**
  * Ollama, through its OpenAI-compatible router at /v1.
@@ -220,7 +297,7 @@ export const DeepSeekAPIRequest = async (text: string, maxElements: number, apiK
  * The API key is required by the SDK but ignored by Ollama, and nothing leaves
  * the machine — which is the whole point of this provider.
  */
-export const OllamaAPIRequest = async (text: string, maxElements: number, _apiKey: string, model: string): Promise<ProviderResponse> => {
+export const OllamaAPIRequest = async ({ text, maxElements, model, onPartial }: ProviderRequest): Promise<ProviderResponse> => {
     const openai = new OpenAI({
         baseURL: 'http://localhost:11434/v1',
         apiKey: 'ollama',
@@ -229,7 +306,7 @@ export const OllamaAPIRequest = async (text: string, maxElements: number, _apiKe
         maxRetries: MAX_RETRIES
     });
 
-    const response = await openai.chat.completions.create({
+    return streamChatCompletion(openai, {
         messages: [{ role: "system", content: createPrompt(maxElements, true) },
         { role: "user", content: text }],
         model,
@@ -237,13 +314,5 @@ export const OllamaAPIRequest = async (text: string, maxElements: number, _apiKe
         max_tokens: 8192,
         // Small local models drift into invalid JSON at higher temperatures.
         temperature: 0,
-    });
-
-    return {
-        text: response.choices[0]?.message.content ?? "",
-        usage: {
-            input: response.usage?.prompt_tokens ?? 0,
-            output: response.usage?.completion_tokens ?? 0,
-        },
-    };
+    }, onPartial, false);
 };

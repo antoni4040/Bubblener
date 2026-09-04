@@ -3,6 +3,9 @@ import defaults from '@/utils/constants/defaults';
 import themes from '@/utils/constants/themes';
 import getVisibleTextOnScreen, { getContentRoot } from '@/utils/domUtils';
 import findMentions, { usableTerms } from '@/utils/findMentions';
+import mergeEntities, { RankedEntity } from '@/utils/mergeEntities';
+import { isWithinReach } from '@/utils/entityDistance';
+import maxNumberOfElements from '@/utils/storage/maxNumberOfElements';
 import HighlightOverlay from './HighlightOverlay/HighlightOverlay';
 import bubbleColors from '@/utils/storage/bubbleColors';
 import maxNumberOfCharacters from '@/utils/storage/maxNumberOfCharacters';
@@ -27,7 +30,13 @@ import bubbleDistance from '@/utils/storage/bubbleDistance';
 import BubblePositionEnum from '@/utils/types/bubblePositionEnum';
 
 const BubblesContainer = () => {
-    const [entities, setEntities] = useState([]);
+    const [entities, setEntities] = useState<RankedEntity[]>([]);
+    // Increments per request, so entities from the section being read can
+    // displace those from sections already passed.
+    const batchRef = useRef(0);
+    // The message listener is installed once and closes over its initial
+    // state, so the live limit reaches it through a ref rather than state.
+    const maxElementsRef = useRef(defaults.maxElements);
     const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [error, setError] = useState(null);
@@ -77,6 +86,7 @@ const BubblesContainer = () => {
         }
         lastSentTextRef.current = text;
 
+        batchRef.current += 1;
         setLoading(true);
         setRequestStartedAt(Date.now());
         setEstimateMs(null);
@@ -93,13 +103,14 @@ const BubblesContainer = () => {
     useEffect(() => {
         const loadSettings = async () => {
             try {
-                const [threshold, colors, characters, position, distance, selectedTheme, size, transparent, highlights] = await Promise.all([
+                const [threshold, colors, characters, position, distance, selectedTheme, maxEls, size, transparent, highlights] = await Promise.all([
                     pixelDistance.getValue(),
                     bubbleColors.getValue(),
                     maxNumberOfCharacters.getValue(),
                     bubblePosition.getValue(),
                     bubbleDistance.getValue(),
                     themeStorage.getValue(),
+                    maxNumberOfElements.getValue(),
                     bubbleSize.getValue(),
                     bubbleTransparency.getValue(),
                     textHighlighting.getValue()
@@ -111,6 +122,7 @@ const BubblesContainer = () => {
                 setBubbleDistance(distance ?? defaults.bubbleDistance);
                 setActiveTheme(selectedTheme ?? defaults.theme);
                 setColorScheme(themes[selectedTheme ?? defaults.theme].colorScheme);
+                maxElementsRef.current = maxEls ?? defaults.maxElements;
                 setBubbleSize(size ?? defaults.bubbleSize);
                 setTransparent(transparent ?? defaults.bubbleTransparency);
                 setShowHighlights(highlights ?? defaults.textHighlighting);
@@ -122,6 +134,7 @@ const BubblesContainer = () => {
                 setBubbleDistance(defaults.bubbleDistance);
                 setActiveTheme(defaults.theme);
                 setColorScheme(themes[defaults.theme].colorScheme);
+                maxElementsRef.current = defaults.maxElements;
                 setBubbleSize(defaults.bubbleSize);
                 setTransparent(defaults.bubbleTransparency);
                 setShowHighlights(defaults.textHighlighting);
@@ -141,10 +154,16 @@ const BubblesContainer = () => {
                 setEstimateMs(request.started.estimateMs ?? null);
             }
             if (request.entities) {
-                setEntities(request.entities.nodes || []);
+                setEntities(previous => mergeEntities(
+                    previous, request.entities.nodes || [], maxElementsRef.current, batchRef.current
+                ));
                 setError(null);
-                setLoading(false);
-                setRequestStartedAt(null);
+                // Partial batches keep the request open; only the final
+                // message ends it.
+                if (!request.streaming) {
+                    setLoading(false);
+                    setRequestStartedAt(null);
+                }
             }
             if (request.usage) {
                 setSessionUsage(previous => ({
@@ -168,6 +187,7 @@ const BubblesContainer = () => {
             if (changes.pixelDistance || changes.bubbleColors ||
                 changes.maxNumberOfCharacters || changes.bubblePosition
                 || changes.bubbleDistance || changes.theme || changes.bubbleSize
+                || changes.maxNumberOfElements
                 || changes.bubbleTransparency || changes.textHighlighting) {
                 console.log('Settings changed, reloading...');
                 loadSettings();
@@ -239,7 +259,23 @@ const BubblesContainer = () => {
         // simply fail to match, so no extra verification is needed.
         const terms = entities.map((entity: Entity) =>
             usableTerms([entity.entity_name, ...(entity.mentions ?? [])]));
-        setMentions(findMentions(getContentRoot(), terms));
+        const found = findMentions(getContentRoot(), terms);
+
+        // Retire entities whose nearest mention is screens away: by chapter
+        // four the people named in the introduction are no longer about
+        // anything on the page, however important they were there.
+        const inReach = found.map((ranges) => isWithinReach(
+            ranges.map((range) => range.getBoundingClientRect()),
+            window.innerHeight,
+        ));
+
+        if (inReach.includes(false)) {
+            // Re-running with the smaller set recomputes the mentions below.
+            setEntities((previous) => previous.filter((_, index) => inReach[index] ?? true));
+            return;
+        }
+
+        setMentions(found);
     }, [entities]);
 
     const focused = bubbleFocus ?? mentionFocus;
@@ -338,7 +374,7 @@ const BubblesContainer = () => {
                 />
             )}
 
-            {showBubbles && !isLoading && <div id="entity-bubbles-container"
+            {showBubbles && (entities.length > 0 || !isLoading) && <div id="entity-bubbles-container"
                 ref={bubblesRef}
                 style={{
                     top: getBubblePosition === BubblePositionEnum.TopRight || getBubblePosition === BubblePositionEnum.TopLeft ? bubbleDistanceValue : 'auto',
@@ -410,7 +446,7 @@ const BubblesContainer = () => {
                 />
             )}
 
-            {isLoading && (
+            {isLoading && entities.length === 0 && (
                 <LoadingIndicator
                     bubblePosition={getBubblePosition}
                     bubbleDistance={bubbleDistanceValue}
