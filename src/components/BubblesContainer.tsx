@@ -41,6 +41,9 @@ const BubblesContainer = () => {
     // The message listener is installed once and closes over its initial
     // state, so the live limit reaches it through a ref rather than state.
     const maxElementsRef = useRef(defaults.maxElements);
+    // Read through a ref for the same reason as the limit above: the first
+    // analysis is fired before React has applied the loaded state.
+    const maxCharactersRef = useRef(defaults.maxCharacters);
     const [starred, setStarred] = useState<SavedEntities>({});
     const [hidden, setHidden] = useState<SavedEntities>({});
     // The message listener is installed once, so these reach it via refs.
@@ -83,7 +86,7 @@ const BubblesContainer = () => {
             return;
         }
 
-        const maxTextLength = numberOfCharacters || defaults.maxCharacters;
+        const maxTextLength = maxCharactersRef.current || defaults.maxCharacters;
         if (text.length > maxTextLength) {
             text = text.substring(0, maxTextLength);
             console.log(`Text truncated to ${maxTextLength} characters.`);
@@ -132,6 +135,7 @@ const BubblesContainer = () => {
                 setScrollThreshold(threshold ?? defaults.scrollThreshold);
                 setEntityColors(colors ?? defaults.colorSettings);
                 setNumberOfCharacters(characters ?? defaults.maxCharacters);
+                maxCharactersRef.current = characters ?? defaults.maxCharacters;
                 setBubblePosition(position ?? defaults.position);
                 setBubbleDistance(distance ?? defaults.bubbleDistance);
                 setActiveTheme(selectedTheme ?? defaults.theme);
@@ -148,6 +152,7 @@ const BubblesContainer = () => {
                 setScrollThreshold(defaults.scrollThreshold);
                 setEntityColors(defaults.colorSettings);
                 setNumberOfCharacters(defaults.maxCharacters);
+                maxCharactersRef.current = defaults.maxCharacters;
                 setBubblePosition(defaults.position);
                 setBubbleDistance(defaults.bubbleDistance);
                 setActiveTheme(defaults.theme);
@@ -158,10 +163,10 @@ const BubblesContainer = () => {
                 setShowHighlights(defaults.textHighlighting);
             }
         };
-        loadSettings();
-
-        const initialText = getVisibleTextOnScreen();
-        processText(initialText);
+        // Awaited: firing the first analysis before the saved settings have
+        // loaded meant every page's opening request used the defaults, so a
+        // lowered character limit was ignored exactly when it mattered most.
+        loadSettings().then(() => processText(getVisibleTextOnScreen()));
 
         const messageListener = (
             request: any,
