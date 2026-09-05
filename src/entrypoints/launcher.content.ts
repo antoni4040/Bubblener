@@ -1,4 +1,6 @@
 import showLauncher from '@/utils/storage/showLauncher';
+import blockedSites from '@/utils/storage/blockedSites';
+import { isSiteBlocked } from '@/utils/siteBlocking';
 import bubblePosition from '@/utils/storage/bubblePosition';
 import bubbleDistance from '@/utils/storage/bubbleDistance';
 import themeStorage from '@/utils/storage/theme';
@@ -23,6 +25,9 @@ export default defineContentScript({
     async main() {
         if (window.top !== window) return;              // not in every iframe
         if (!(await showLauncher.getValue())) return;
+        // Cosmetic only — the background refuses blocked sites regardless.
+        // Offering a button that cannot work would read as a broken extension.
+        if (isSiteBlocked(location.href, await blockedSites.getValue())) return;
 
         const [position, distance, theme] = await Promise.all([
             bubblePosition.getValue(),

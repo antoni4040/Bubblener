@@ -19,7 +19,7 @@ npm run dev              # Chrome dev build + auto-reload
 npm run dev:firefox
 
 npm run compile          # tsc --noEmit — run this before declaring anything done
-npm test                 # Vitest unit suite (139 tests / 18 files, ~30s)
+npm test                 # Vitest unit suite (167 tests / 19 files, ~35s)
 npm run test:watch
 npm run test:coverage    # v8 coverage; components + utils, entrypoints excluded
 
@@ -114,6 +114,22 @@ the settings popup instead). `activateContentScript` injects the content script 
 in `activatedTabs`; **`onMessage` ignores messages from any tab not in that set**, so an arbitrary
 page can't trigger a paid API call. Keep that check if you touch the message handler.
 
+### The blocklist is enforced in the background, twice
+
+`blockedSites` is a privacy control, so `utils/siteBlocking.ts` is consulted in
+`background.ts` at **activation** *and* again in `onMessage` before any text is
+dispatched. The second check is not redundant: blocking a site the user already
+has open has to stop it immediately, and without it an already-activated tab
+keeps sending until it happens to navigate. The launcher also hides itself on a
+blocked site, but that is cosmetic only — **never make hiding the button the
+enforcement.**
+
+Patterns are hostnames, never user-supplied regex (ReDoS, and unauthorable). A
+bare `example.com` deliberately covers subdomains: for a privacy control the
+surprising direction should be the safe one. `*.example.com` is accepted as a
+synonym. The blocklist is saved on click rather than staged behind **Save**, and
+`handleResetAll` deliberately leaves it alone.
+
 MV2 and MV3 script injection are both handled (`browser.scripting` / `browser.tabs.executeScript`)
 because Firefox and Chrome don't agree.
 
@@ -122,7 +138,7 @@ because Firefox and Chrome don't agree.
 `apiKey`, `modelAPI`, `modelTier`, `ollamaModel`, `theme`, `bubbleColors`, `bubblePosition`,
 `bubbleDistance`, `bubbleSize`, `bubbleTransparency`, `textHighlighting`, `pixelDistance`,
 `maxNumberOfElements`, `maxNumberOfCharacters`, `tokenUsage`, `timingStats`, `starredEntities`,
-`hiddenEntities` — each a `storage.defineItem` module under `utils/storage/`. `local:`, never
+`hiddenEntities`, `blockedSites` — each a `storage.defineItem` module under `utils/storage/`. `local:`, never
 `sync:`, so the key is never uploaded to a browser account.
 
 `BubblesContainer` re-reads settings on `storage.onChanged`, so the popup's Save updates live pages

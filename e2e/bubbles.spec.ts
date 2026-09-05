@@ -42,7 +42,8 @@ const streamEntities = (entities: unknown[]) => ({
 // extension on it via the real background code path.
 const activateOnArticle = async (
     { context, background }: { context: any; background: any },
-    storageOverrides: Record<string, unknown> = {}
+    storageOverrides: Record<string, unknown> = {},
+    url: string = ARTICLE_URL
 ) => {
     await background.evaluate(
         (overrides: Record<string, unknown>) =>
@@ -50,21 +51,22 @@ const activateOnArticle = async (
         storageOverrides
     );
 
-    await context.route(ARTICLE_URL, (route: any) =>
+    await context.route(url, (route: any) =>
         route.fulfill({ contentType: 'text/html', body: ARTICLE_HTML })
     );
 
     const page = await context.newPage();
-    await page.goto(ARTICLE_URL);
+    await page.goto(url);
 
-    const tabId = await background.evaluate(async (url: string) => {
-        const tabs = await chrome.tabs.query({ url });
+    const tabId = await background.evaluate(async (pageUrl: string) => {
+        const tabs = await chrome.tabs.query({ url: pageUrl });
         return tabs[0]?.id;
-    }, ARTICLE_URL);
+    }, url);
 
     await background.evaluate(
-        ({ id, url }: { id: number; url: string }) => (self as any).__bubblenerTestActivate({ id, url }),
-        { id: tabId, url: ARTICLE_URL }
+        ({ id, pageUrl }: { id: number; pageUrl: string }) =>
+            (self as any).__bubblenerTestActivate({ id, url: pageUrl }),
+        { id: tabId, pageUrl: url }
     );
 
     return page;
@@ -497,4 +499,52 @@ test('unchanged visible text is not re-sent', async ({ context, background }) =>
         await page.waitForTimeout(900);
     }
     expect(payloads).toHaveLength(1);
+});
+
+test('never contacts the provider on a blocked site', async ({ context, background }) => {
+    // The real guarantee is not that the bubbles are hidden — it is that the
+    // page text never leaves the browser. So assert on the network, not the UI.
+    let providerCalls = 0;
+    await context.route(DEEPSEEK_URL, (route) => {
+        providerCalls++;
+        return route.fulfill(streamEntities([TEST_ENTITY]));
+    });
+
+    const page = await activateOnArticle({ context, background }, {
+        blockedSites: ['example.com'],
+    });
+
+    await page.waitForTimeout(2500);
+
+    expect(providerCalls).toBe(0);
+    await expect(page.getByText(TEST_ENTITY.entity_name, { exact: true })).toHaveCount(0);
+});
+
+test('blocking a parent domain also covers its subdomains', async ({ context, background }) => {
+    let providerCalls = 0;
+    await context.route(DEEPSEEK_URL, (route) => {
+        providerCalls++;
+        return route.fulfill(streamEntities([TEST_ENTITY]));
+    });
+
+    const page = await activateOnArticle(
+        { context, background },
+        { blockedSites: ['example.com'] },
+        'https://news.example.com/story',
+    );
+
+    await page.waitForTimeout(2500);
+    expect(providerCalls).toBe(0);
+});
+
+test('an unblocked site still works, so the gate is not simply off', async ({ context, background }) => {
+    // The counterpart to the two tests above: a blocklist that blocked
+    // everything would pass them both and be useless.
+    await context.route(DEEPSEEK_URL, (route) => route.fulfill(streamEntities([TEST_ENTITY])));
+
+    const page = await activateOnArticle({ context, background }, {
+        blockedSites: ['unrelated.test'],
+    });
+
+    await expect(page.getByText(TEST_ENTITY.entity_name, { exact: true })).toBeVisible();
 });

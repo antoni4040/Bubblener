@@ -46,6 +46,7 @@ Scrolling repeats this for the new section. An analysis you've scrolled away fro
 -   **Ollama sends nothing anywhere.** It runs on your own machine.
 -   **The launcher runs on every page.** To offer the small start button, a tiny content script (~22KB, no page content read) loads on the pages you visit. It only draws a button and reads your settings — no text is extracted and nothing is sent until you click it. You can turn it off in the popup, and the extension will still be reachable from the popup and right-click menu.
 -   **Page text is sent only when you ask.** Analysis is per-tab and opt-in; a page cannot trigger it on its own.
+-   **Blocked sites are never read.** Add a site under Privacy in the popup — or hit "Never on this site" — and Bubblener will not analyse it or show a launch button there. Blocking a domain covers its subdomains, and the refusal lives in the background script, so it holds even for a tab that was already active.
 
 ## Installation & Setup
 

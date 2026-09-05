@@ -35,8 +35,12 @@ export const sendMessageMock = vi.fn(async (message: any) => {
             removeListener: (fn: Listener) => storageListeners.delete(fn),
         },
     },
-    tabs: { create: vi.fn(), query: vi.fn(async () => []) },
+    tabs: { create: vi.fn(), query: vi.fn(async () => activeTabs) },
 };
+
+/** What `browser.tabs.query` should report as the active tab. */
+let activeTabs: any[] = [];
+export const setActiveTab = (tab: any) => { activeTabs = tab ? [tab] : []; };
 
 /** Delivers a message from the background, as `browser.tabs.sendMessage` would. */
 export const emitMessage = (message: any) => {
@@ -49,6 +53,7 @@ export const emitStorageChange = (changes: Record<string, unknown>) => {
 };
 
 export const resetBrowser = () => {
+    activeTabs = [];
     sentMessages.length = 0;
     sendMessageMock.mockClear();
     messageListeners.clear();

@@ -11,6 +11,8 @@ import parseEntitiesResponse from '@/utils/parseEntitiesResponse';
 import tokenUsage from '@/utils/storage/tokenUsage';
 import type { ProviderResponse } from '@/utils/promptUtils';
 import apiKey from '@/utils/storage/apiKey';
+import blockedSites from '@/utils/storage/blockedSites';
+import { isSiteBlocked } from '@/utils/siteBlocking';
 import modelAPI from '@/utils/storage/modelAPI';
 import maxNumberOfElements from '@/utils/storage/maxNumberOfElements';
 import ModelAPIsEnum from '@/utils/types/modelAPIsEnum';
@@ -48,6 +50,9 @@ export default defineBackground(() => {
   const inFlight = new Map<number, { id: number; controller: AbortController }>();
   let nextRequestId = 0;
 
+  const isBlocked = async (url: string | undefined) =>
+    isSiteBlocked(url, await blockedSites.getValue());
+
   // Function to activate content script
   const activateContentScript = async (tab: any) => {
     // Validate tab exists and has valid ID
@@ -79,6 +84,21 @@ export default defineBackground(() => {
         });
         return;
       }
+    }
+
+    // The blocklist is a privacy control, so it is enforced here rather than
+    // only in the UI: the background script is the one place that can actually
+    // refuse, the same reason `activatedTabs` is checked before any paid call.
+    if (await isBlocked(tab.url)) {
+      console.log(`Bubblener is blocked on ${tab.url}`);
+
+      browser.notifications.create({
+        type: 'basic',
+        iconUrl: browser.runtime.getURL('/icon-128.png'),
+        title: 'Bubblener Blocked Here',
+        message: 'This site is on your blocklist. Remove it in the settings to analyse it.',
+      });
+      return;
     }
 
     try {
@@ -195,6 +215,16 @@ export default defineBackground(() => {
 
     // Check if message has text and sender is from an activated tab
     if (!request.text || !sender.tab?.id || !activatedTabs.has(sender.tab.id)) {
+      return;
+    }
+
+    // Checked again on the way in, not just at activation. Blocking a site the
+    // user already has open must stop it immediately — otherwise an activated
+    // tab keeps sending until it happens to navigate.
+    if (await isBlocked(sender.tab.url)) {
+      console.log(`Refusing text from blocked site ${sender.tab.url}`);
+      activatedTabs.delete(sender.tab.id);
+      inFlight.get(sender.tab.id)?.controller.abort();
       return;
     }
 

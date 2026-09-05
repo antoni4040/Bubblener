@@ -3,7 +3,7 @@ import bubbleColors from '@/utils/storage/bubbleColors';
 import bubblePosition from '@/utils/storage/bubblePosition';
 import maxNumberOfCharacters from '@/utils/storage/maxNumberOfCharacters';
 import { Accordion, ActionIcon, Button, Combobox, Group, Image, Input, InputBase, NumberInput, PasswordInput, Stack, Switch, Text, TextInput, Title, useCombobox } from '@mantine/core';
-import { IconDeviceFloppy, IconRestore, IconRotateClockwise, IconBooks, IconSparkles, IconAlertCircle, IconBook, IconPalette } from '@tabler/icons-react';
+import { IconDeviceFloppy, IconRestore, IconRotateClockwise, IconBooks, IconSparkles, IconAlertCircle, IconBook, IconPalette, IconBan, IconX } from '@tabler/icons-react';
 import { useEffect, useRef, useState } from 'react';
 import EntityColorSection from '@/components/EntityColorSection/EntityColorSection';
 import defaults from '@/utils/constants/defaults';
@@ -24,6 +24,8 @@ import bubbleTransparency from '@/utils/storage/bubbleTransparency';
 import textHighlighting from '@/utils/storage/textHighlighting';
 import tokenUsage from '@/utils/storage/tokenUsage';
 import showLauncher from '@/utils/storage/showLauncher';
+import blockedSites from '@/utils/storage/blockedSites';
+import { addPattern, isSiteBlocked, siteLabel } from '@/utils/siteBlocking';
 import formatTokens from '@/utils/formatTokens';
 import ThemeEnum from '@/utils/types/themeEnum';
 import './App.css';
@@ -87,6 +89,12 @@ function App({ onThemeChange }: AppProps = {}) {
   const [localModel, setLocalModel] = useState(defaults.ollamaModel);
   const [launcherOn, setLauncherOn] = useState(defaults.showLauncher);
   const [analyseState, setAnalyseState] = useState<'idle' | 'done' | 'unsupported'>('idle');
+  // The blocklist is deliberately *not* part of the staged settings below. It
+  // is a privacy control: "never on this site" has to take effect the moment
+  // it is clicked, not once the user remembers to press Save.
+  const [blocked, setBlocked] = useState<string[]>(defaults.blockedSites);
+  const [currentSite, setCurrentSite] = useState('');
+  const [siteDraft, setSiteDraft] = useState('');
   // Everything except the API key stages until Save, so the popup has to say
   // when it is holding changes the page has not seen.
   const [dirty, setDirty] = useState(false);
@@ -110,7 +118,8 @@ function App({ onThemeChange }: AppProps = {}) {
         savedUsage,
         savedTier,
         savedLocalModel,
-        savedLauncher
+        savedLauncher,
+        savedBlocked
       ] = await Promise.all([
         apiKey.getValue(),
         pixelDistance.getValue(),
@@ -127,7 +136,8 @@ function App({ onThemeChange }: AppProps = {}) {
         tokenUsage.getValue(),
         modelTier.getValue(),
         ollamaModel.getValue(),
-        showLauncher.getValue()
+        showLauncher.getValue(),
+        blockedSites.getValue()
       ]);
 
       setHasApiKey(!!savedApiKey);
@@ -146,9 +156,15 @@ function App({ onThemeChange }: AppProps = {}) {
       setTier(savedTier || defaults.modelTier);
       setLocalModel(savedLocalModel ?? defaults.ollamaModel);
       setLauncherOn(savedLauncher ?? defaults.showLauncher);
+      setBlocked(savedBlocked ?? defaults.blockedSites);
       setHasLoaded(true);
     }
     loadSettings();
+
+    // Which site the "Never on this site" button would act on.
+    browser.tabs.query({ active: true, currentWindow: true })
+      .then(([tab]) => setCurrentSite(siteLabel(tab?.url)))
+      .catch(() => { /* no tab to offer; the manual field still works */ });
   }, []);
 
   // Everything the Save button is responsible for. Comparing a snapshot beats
@@ -237,6 +253,10 @@ function App({ onThemeChange }: AppProps = {}) {
     }
   };
 
+  // Resets appearance and behaviour only. The blocklist is deliberately left
+  // alone, as the key and the saved entities are: quietly un-blocking someone's
+  // bank because they wanted their bubble colours back would be a nasty
+  // surprise, and it is the one setting where the safe default is to keep it.
   const handleResetAll = async () => {
     try {
       setPixels(defaults.scrollThreshold);
@@ -323,6 +343,25 @@ function App({ onThemeChange }: AppProps = {}) {
     setAnalyseState('done');
     setTimeout(() => window.close(), 400);
   };
+
+  /** Applied straight away — see the note on the `blocked` state above. */
+  const commitBlocked = async (next: string[]) => {
+    setBlocked(next);
+    await blockedSites.setValue(next);
+  };
+
+  const handleBlockSite = (site: string) => {
+    const next = addPattern(blocked, site);
+    if (next !== blocked) commitBlocked(next);
+    setSiteDraft('');
+  };
+
+  const handleUnblockSite = (site: string) =>
+    commitBlocked(blocked.filter((entry) => entry !== site));
+
+  const currentSiteBlocked = isSiteBlocked(
+    currentSite ? `https://${currentSite}` : undefined, blocked,
+  );
 
   const handleResetUsage = async () => {
     // Applied immediately rather than staged: this is a counter, not a setting.
@@ -639,6 +678,67 @@ function App({ onThemeChange }: AppProps = {}) {
           </Group>
         </Input.Wrapper>
             </Stack>
+          </Accordion.Panel>
+        </Accordion.Item>
+
+        <Accordion.Item value="privacy">
+          <Accordion.Control icon={<IconBan size={16} />}>Privacy</Accordion.Control>
+          <Accordion.Panel>
+            <Input.Wrapper
+              label="Blocked sites"
+              description="Bubblener never reads or sends anything on these, and shows no launch button. Blocking a site covers its subdomains. Saved immediately, not on Save."
+            >
+              <Stack gap="xs" mt="xs">
+                {currentSite && (
+                  <Button
+                    variant="light"
+                    color="red"
+                    leftSection={<IconBan size={16} />}
+                    disabled={currentSiteBlocked}
+                    onClick={() => handleBlockSite(currentSite)}
+                  >
+                    {currentSiteBlocked
+                      ? `${currentSite} is blocked`
+                      : `Never on ${currentSite}`}
+                  </Button>
+                )}
+
+                {blocked.map((site) => (
+                  <Group key={site} gap="xs" wrap="nowrap">
+                    <Text size="sm" style={{ flex: 1, wordBreak: 'break-all' }}>{site}</Text>
+                    <ActionIcon
+                      variant="light"
+                      color="gray"
+                      onClick={() => handleUnblockSite(site)}
+                      title={`Stop blocking ${site}`}
+                      aria-label={`Stop blocking ${site}`}
+                    >
+                      <IconX size={16} />
+                    </ActionIcon>
+                  </Group>
+                ))}
+
+                <Group gap="xs" wrap="nowrap">
+                  <TextInput
+                    placeholder="example.com"
+                    value={siteDraft}
+                    onChange={(event) => setSiteDraft(event.currentTarget.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') handleBlockSite(siteDraft);
+                    }}
+                    style={{ flex: 1 }}
+                    aria-label="Site to block"
+                  />
+                  <Button
+                    variant="light"
+                    disabled={!siteDraft.trim()}
+                    onClick={() => handleBlockSite(siteDraft)}
+                  >
+                    Block
+                  </Button>
+                </Group>
+              </Stack>
+            </Input.Wrapper>
           </Accordion.Panel>
         </Accordion.Item>
 

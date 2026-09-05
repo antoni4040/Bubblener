@@ -25,6 +25,8 @@ const defaults = {
     textHighlighting: true,
     /** The discreet on-page button that starts an analysis. */
     showLauncher: true,
+    /** Hostnames never analysed, and never given a launcher. */
+    blockedSites: [] as string[],
     position: BubblePositionEnum.TopRight,
     colorSettings: themes[defaultTheme].colorSettings,
 };
