@@ -35,7 +35,7 @@ describe('extractStreamedEntities', () => {
         }
         // Never goes backwards, and ends with all three.
         for (let i = 1; i < counts.length; i++) {
-            expect(counts[i]).toBeGreaterThanOrEqual(counts[i - 1]);
+            expect(counts[i]).toBeGreaterThanOrEqual(counts[i - 1]!);
         }
         expect(extractStreamedEntities(full)).toHaveLength(3);
     });
@@ -53,7 +53,7 @@ describe('extractStreamedEntities', () => {
     it('does not mistake the wrapper object for an entity', () => {
         const found = extractStreamedEntities(wrapped(['Luzhin']));
         expect(found).toHaveLength(1);
-        expect(found[0].entity_name).toBe('Luzhin');
+        expect(found[0]!.entity_name).toBe('Luzhin');
     });
 
     it('ignores braces and brackets inside string values', () => {
@@ -63,7 +63,7 @@ describe('extractStreamedEntities', () => {
         };
         const found = extractStreamedEntities(JSON.stringify({ entities: [tricky] }));
         expect(found).toHaveLength(1);
-        expect(found[0].description).toBe('He said "} {" and left, oddly.');
+        expect(found[0]!.description).toBe('He said "} {" and left, oddly.');
     });
 
     it('skips a complete object that is not a valid entity', () => {
@@ -73,6 +73,6 @@ describe('extractStreamedEntities', () => {
 
     it('normalises a placeholder enrichment mid-stream, like the batch parser', () => {
         const buffer = JSON.stringify([{ ...entity('Zametov'), contextual_enrichment: 'null' }]);
-        expect(extractStreamedEntities(buffer)[0].contextual_enrichment).toBeNull();
+        expect(extractStreamedEntities(buffer)[0]!.contextual_enrichment).toBeNull();
     });
 });

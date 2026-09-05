@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { estimateMs, recordSample, formatDuration } from '@/utils/timing';
-import TimingStats from '@/utils/types/TimingStats';
+import type TimingStats from '@/utils/types/TimingStats';
 
 const MODEL = 'gemini-3.5-flash-lite';
 
@@ -13,7 +13,7 @@ describe('recordSample', () => {
         expect(stats[MODEL]).toEqual({
             samples: 1, totalMs: 4000, totalInputChars: 1000, totalOutputTokens: 1200,
         });
-        expect(stats['other-model'].samples).toBe(1);
+        expect(stats['other-model']!.samples).toBe(1);
     });
 
     it('halves the running totals past the forget threshold', () => {
@@ -21,8 +21,8 @@ describe('recordSample', () => {
         for (let i = 0; i < 21; i++) stats = recordSample(stats, MODEL, 1000, 1200, 4000);
 
         // Averages survive the halving; only the weight of history drops.
-        expect(stats[MODEL].samples).toBeLessThan(21);
-        expect(stats[MODEL].totalMs / stats[MODEL].samples).toBeCloseTo(4000, 5);
+        expect(stats[MODEL]!.samples).toBeLessThan(21);
+        expect(stats[MODEL]!.totalMs / stats[MODEL]!.samples).toBeCloseTo(4000, 5);
     });
 });
 

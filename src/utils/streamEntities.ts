@@ -1,5 +1,5 @@
 import { EntitySchema } from '@/utils/parseEntitiesResponse';
-import Entity from '@/utils/types/Entity';
+import type Entity from '@/utils/types/Entity';
 
 /**
  * Pulling finished entities out of a half-received response.

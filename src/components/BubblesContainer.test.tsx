@@ -5,7 +5,7 @@ import { renderWithMantine } from '@/test/renderWithMantine';
 import { emitMessage, emitStorageChange, sentMessages } from '@/test/mockBrowser';
 import { setStored } from '@/test/mockWxtStorage';
 import BubblesContainer from '@/components/BubblesContainer';
-import Entity from '@/utils/types/Entity';
+import type Entity from '@/utils/types/Entity';
 
 const entity = (name: string, extra: Partial<Entity> = {}): Entity => ({
     entity_name: name,

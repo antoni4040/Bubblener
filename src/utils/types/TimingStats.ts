@@ -8,4 +8,4 @@ export interface ModelTiming {
 /** Keyed by model id — latency differs far more between models than providers. */
 type TimingStats = Record<string, ModelTiming>;
 
-export default TimingStats;
+export type { TimingStats as default };

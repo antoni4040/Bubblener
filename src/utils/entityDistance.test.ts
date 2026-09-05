@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { nearestViewportDistance, isWithinReach, MeasuredRect } from '@/utils/entityDistance';
+import { nearestViewportDistance, isWithinReach, type MeasuredRect } from '@/utils/entityDistance';
 
 const VIEWPORT = 800;
 const at = (top: number, height = 20): MeasuredRect =>

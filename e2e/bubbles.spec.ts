@@ -145,7 +145,7 @@ test('accumulates entities across sections instead of replacing them', async ({ 
     const batches = [['Raskolnikov', 'Dounia'], ['Razumihin', 'Sonia']];
     let call = 0;
     await context.route(DEEPSEEK_URL, (route) => {
-        const names = batches[Math.min(call++, batches.length - 1)];
+        const names = batches[Math.min(call++, batches.length - 1)]!;
         // The SDK is streaming, so answer with an SSE body.
         return route.fulfill(streamEntities(names.map(entity)));
     });
@@ -202,7 +202,7 @@ test('honours Max Number of Elements, keeping the most important', async ({ cont
     ];
     let call = 0;
     await context.route(DEEPSEEK_URL, (route) =>
-        route.fulfill(streamEntities(batches[Math.min(call++, 1)])));
+        route.fulfill(streamEntities(batches[Math.min(call++, 1)]!)));
 
     const LONG_URL = 'https://example.com/ranked';
     await context.route(LONG_URL, (route) => route.fulfill({
@@ -263,7 +263,7 @@ test('retires entities left screens behind, however important', async ({ context
     ];
     let call = 0;
     await context.route(DEEPSEEK_URL, (route) =>
-        route.fulfill(streamEntities(batches[Math.min(call++, 1)])));
+        route.fulfill(streamEntities(batches[Math.min(call++, 1)]!)));
 
     const LONG_URL = 'https://example.com/novel';
     await context.route(LONG_URL, (route) => route.fulfill({

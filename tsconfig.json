@@ -2,6 +2,9 @@
   "extends": "./.wxt/tsconfig.json",
   "compilerOptions": {
     "allowImportingTsExtensions": true,
-    "jsx": "react-jsx"
+    "jsx": "react-jsx",
+    // TypeScript 7 no longer pulls @types/chrome in implicitly, and the e2e
+    // specs drive the extension through the `chrome` global.
+    "types": ["chrome"]
   }
 }

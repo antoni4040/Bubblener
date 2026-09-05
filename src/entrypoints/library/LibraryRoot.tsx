@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Center, Container, MantineColorsTuple, MantineProvider, createTheme } from '@mantine/core';
+import { Center, Container, type MantineColorsTuple, MantineProvider, createTheme } from '@mantine/core';
 import Library from './Library';
 import defaults from '@/utils/constants/defaults';
 import themes from '@/utils/constants/themes';

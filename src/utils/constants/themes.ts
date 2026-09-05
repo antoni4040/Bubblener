@@ -1,5 +1,5 @@
 import ThemeEnum from '@/utils/types/themeEnum';
-import ThemePreset from '@/utils/types/ThemePreset';
+import type ThemePreset from '@/utils/types/ThemePreset';
 
 const SANS = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
 const BOOK = 'Baskerville, "Libre Baskerville", "Palatino Linotype", Palatino, "Book Antiqua", "Iowan Old Style", Georgia, serif';

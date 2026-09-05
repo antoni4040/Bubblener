@@ -1,4 +1,4 @@
-import Entity from '@/utils/types/Entity';
+import type Entity from '@/utils/types/Entity';
 import entityKey from '@/utils/entityKey';
 
 export interface RankedEntity extends Entity {

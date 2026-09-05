@@ -11,4 +11,4 @@ interface Entity {
     contextual_enrichment: string | null;
 }
 
-export default Entity;
+export type { Entity as default };

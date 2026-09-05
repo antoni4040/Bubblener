@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import mergeEntities, { RankedEntity } from '@/utils/mergeEntities';
+import mergeEntities, { type RankedEntity } from '@/utils/mergeEntities';
 import entityKey from '@/utils/entityKey';
-import Entity from '@/utils/types/Entity';
+import type Entity from '@/utils/types/Entity';
 
 const make = (name: string, importance?: number, description = 'd'): Entity => ({
     entity_name: name,
@@ -28,7 +28,7 @@ describe('mergeEntities', () => {
     it('replaces a repeated entity with the newer version', () => {
         const result = mergeEntities([make('A', 0.5, 'old')], [make('A', 0.5, 'new')], 10, 1);
         expect(result).toHaveLength(1);
-        expect(result[0].description).toBe('new');
+        expect(result[0]!.description).toBe('new');
     });
 
     it('treats names differing only by case or padding as the same entity', () => {

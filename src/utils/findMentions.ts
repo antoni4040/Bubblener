@@ -99,16 +99,20 @@ const buildTextIndex = (root: Node): TextIndex => {
     return { text, chunks };
 };
 
-/** Maps an offset in the flattened text back to (node, offsetWithinNode). */
+/**
+ * Maps an offset in the flattened text back to (node, offsetWithinNode).
+ * Only called for an offset that matched in the flattened text, which cannot
+ * happen unless at least one chunk contributed it — so `lo` always lands.
+ */
 const locate = (index: TextIndex, offset: number) => {
     let lo = 0;
     let hi = index.chunks.length - 1;
     while (lo < hi) {
         const mid = Math.ceil((lo + hi) / 2);
-        if (index.chunks[mid].start <= offset) lo = mid;
+        if (index.chunks[mid]!.start <= offset) lo = mid;
         else hi = mid - 1;
     }
-    const chunk = index.chunks[lo];
+    const chunk = index.chunks[lo]!;
     return { node: chunk.node, offset: offset - chunk.start };
 };
 
@@ -118,7 +122,7 @@ const WORDLIKE = /[\p{L}\p{N}]/u;
 
 const isBoundary = (text: string, position: number): boolean => {
     if (position < 0 || position >= text.length) return true;
-    return !WORDLIKE.test(text[position]);
+    return !WORDLIKE.test(text[position]!);
 };
 
 /** Every whole-word occurrence of `term`, as Ranges, in document order. */

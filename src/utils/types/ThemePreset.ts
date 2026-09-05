@@ -1,4 +1,4 @@
-import EntityColors from './EntityColors';
+import type EntityColors from './EntityColors';
 
 /** Shape/elevation of an entity bubble. Themes change these, not just colors:
  *  a printed catalogue card and a CRT terminal both have square corners and
@@ -42,4 +42,4 @@ interface ThemePreset {
 }
 
 export type { BubbleStyle };
-export default ThemePreset;
+export type { ThemePreset as default };

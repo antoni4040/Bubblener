@@ -1,7 +1,7 @@
-import Entity from "@/utils/types/Entity";
+import type Entity from "@/utils/types/Entity";
 import { Badge, Button, Group, Modal, Text, Stack, Title } from "@mantine/core";
 import { IconStar, IconStarFilled, IconEyeOff } from "@tabler/icons-react";
-import EntityColors from "@/utils/types/EntityColors";
+import type EntityColors from "@/utils/types/EntityColors";
 
 type EntityModalProps = {
     entity: Entity | null;

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import Entity from '@/utils/types/Entity';
+import type Entity from '@/utils/types/Entity';
 
 // Models routinely answer "no enrichment" with a placeholder string rather
 // than JSON null, which then renders as the word "null" in the modal.
@@ -56,7 +56,8 @@ export const EntitySchema = z.object({
 // sometimes wrap JSON responses in, regardless of surrounding whitespace.
 const stripCodeFence = (text: string): string => {
     const fenced = text.trim().match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-    return fenced ? fenced[1].trim() : text.trim();
+    // Group 1 is present whenever the match succeeded — it is not optional.
+    return fenced ? fenced[1]!.trim() : text.trim();
 };
 
 // Trailing commas are the most common way an LLM hands back JSON that is

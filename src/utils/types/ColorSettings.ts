@@ -4,4 +4,4 @@ interface ColorSettings {
     textColor: string;
 }
 
-export default ColorSettings;
+export type { ColorSettings as default };

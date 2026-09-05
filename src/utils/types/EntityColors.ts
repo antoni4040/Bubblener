@@ -1,4 +1,4 @@
-import ColorSettings from "./ColorSettings";
+import type ColorSettings from "./ColorSettings";
 
 interface EntityColors {
     person: ColorSettings;
@@ -7,4 +7,4 @@ interface EntityColors {
     keyConcept: ColorSettings;
 }
 
-export default EntityColors;
+export type { EntityColors as default };

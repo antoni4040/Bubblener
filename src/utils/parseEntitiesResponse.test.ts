@@ -59,7 +59,7 @@ describe('parseEntitiesResponse', () => {
         // A novel is full of significant objects with nowhere else to go, and
         // models answer "Object" — which used to void the whole response.
         const raw = JSON.stringify([{ ...validEntity, entity_type: 'Object' }]);
-        expect(parseEntitiesResponse(raw)[0].entity_type).toBe('Key Concept/Theme');
+        expect(parseEntitiesResponse(raw)[0]!.entity_type).toBe('Key Concept/Theme');
     });
 
     it('recognises common synonyms for the four categories', () => {
@@ -72,7 +72,7 @@ describe('parseEntitiesResponse', () => {
         ];
         for (const [given, expected] of cases) {
             const raw = JSON.stringify([{ ...validEntity, entity_type: given }]);
-            expect(parseEntitiesResponse(raw)[0].entity_type, given).toBe(expected);
+            expect(parseEntitiesResponse(raw)[0]!.entity_type, given).toBe(expected);
         }
     });
 
@@ -111,13 +111,13 @@ describe('parseEntitiesResponse', () => {
         // Gemini's schema used to forbid null here, so the model wrote "null".
         for (const placeholder of ['null', 'None', 'N/A', '  ', '-']) {
             const raw = JSON.stringify([{ ...validEntity, contextual_enrichment: placeholder }]);
-            expect(parseEntitiesResponse(raw)[0].contextual_enrichment).toBeNull();
+            expect(parseEntitiesResponse(raw)[0]!.contextual_enrichment).toBeNull();
         }
     });
 
     it('keeps genuine enrichment text untouched', () => {
         const raw = JSON.stringify([{ ...validEntity, contextual_enrichment: 'Founded in 1985.' }]);
-        expect(parseEntitiesResponse(raw)[0].contextual_enrichment).toBe('Founded in 1985.');
+        expect(parseEntitiesResponse(raw)[0]!.contextual_enrichment).toBe('Founded in 1985.');
     });
 
     it('returns an empty array when given an empty JSON array', () => {

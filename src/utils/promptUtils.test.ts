@@ -70,7 +70,7 @@ describe('GeminiAPIRequest', () => {
 
         await GeminiAPIRequest({ ...base, maxElements: 5 });
 
-        const call = generateContentStreamMock.mock.calls[0][0];
+        const call = generateContentStreamMock.mock.calls[0]![0];
         expect(call.contents).toBe('page text');
         expect(call.config.systemInstruction).toContain('at most 5');
         expect(call.config.systemInstruction).toMatch(/verbatim/i);
@@ -105,7 +105,7 @@ describe('ChatGPTAPIRequest', () => {
             onPartial: (a) => partials.push(a),
         });
 
-        const call = responsesCreateMock.mock.calls[0][0];
+        const call = responsesCreateMock.mock.calls[0]![0];
         expect(call.stream).toBe(true);
         expect(call.model).toBe('gpt-5.6-luna');
         expect(call.input[0].content).toContain('at most 8');
@@ -128,7 +128,7 @@ describe('ChatGPTAPIRequest', () => {
         responsesCreateMock.mockResolvedValue(asStream([]));
         await ChatGPTAPIRequest({ ...base, apiKey: 'gpt-key' });
 
-        const client = openaiConstructorSpy.mock.calls[0][0];
+        const client = openaiConstructorSpy.mock.calls[0]![0];
         expect(client.apiKey).toBe('gpt-key');
         expect(client.timeout).toBeGreaterThan(0);
         expect(client.maxRetries).toBeLessThanOrEqual(1);
@@ -150,7 +150,7 @@ describe('DeepSeekAPIRequest', () => {
         expect(openaiConstructorSpy).toHaveBeenCalledWith(
             expect.objectContaining({ baseURL: 'https://api.deepseek.com', apiKey: 'ds-key' })
         );
-        const call = chatCompletionsCreateMock.mock.calls[0][0];
+        const call = chatCompletionsCreateMock.mock.calls[0]![0];
         expect(call.model).toBe('deepseek-v4-flash');
         expect(call.stream).toBe(true);
         // Streaming suppresses usage unless it is requested.
@@ -170,7 +170,7 @@ describe('DeepSeekAPIRequest', () => {
         chatCompletionsCreateMock.mockResolvedValue(asStream([]));
         await DeepSeekAPIRequest(base);
 
-        const prompt = chatCompletionsCreateMock.mock.calls[0][0].messages[0].content;
+        const prompt = chatCompletionsCreateMock.mock.calls[0]![0].messages[0].content;
         expect(prompt).toContain('OUTPUT FORMAT');
         expect(prompt).toContain('json');
     });
@@ -193,9 +193,9 @@ describe('OllamaAPIRequest', () => {
             expect.objectContaining({ baseURL: 'http://localhost:11434/v1' })
         );
         // The SDK demands a key; Ollama ignores it. Empty would throw locally.
-        expect(openaiConstructorSpy.mock.calls[0][0].apiKey).toBeTruthy();
+        expect(openaiConstructorSpy.mock.calls[0]![0].apiKey).toBeTruthy();
 
-        const call = chatCompletionsCreateMock.mock.calls[0][0];
+        const call = chatCompletionsCreateMock.mock.calls[0]![0];
         expect(call.model).toBe('llama3.2');
         expect(call.stream).toBe(true);
         expect(call.temperature).toBe(0);

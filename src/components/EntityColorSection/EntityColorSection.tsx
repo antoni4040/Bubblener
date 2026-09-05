@@ -56,7 +56,7 @@ const EntityColorSection: React.FC<EntityColorSectionProps> = ({
                 </Group>
             </Group>
 
-            <Collapse in={isOpen}>
+            <Collapse expanded={isOpen}>
                 <Stack gap="sm" pl="md">
                     <Group grow>
                         <ColorInput

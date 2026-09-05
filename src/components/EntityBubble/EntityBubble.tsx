@@ -1,8 +1,8 @@
 import { Popover, Text, Badge } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import Entity from '../../utils/types/Entity';
+import type Entity from '../../utils/types/Entity';
 import styles from './EntityBubble.module.css';
-import EntityColors from '@/utils/types/EntityColors';
+import type EntityColors from '@/utils/types/EntityColors';
 import { getEntityGradient, getEntityTextColor } from '@/utils/entityColors';
 
 interface EntityBubbleProps {

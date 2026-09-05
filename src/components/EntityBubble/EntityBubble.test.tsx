@@ -3,7 +3,7 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { renderWithMantine } from '@/test/renderWithMantine';
 import EntityBubble from './EntityBubble';
-import Entity from '@/utils/types/Entity';
+import type Entity from '@/utils/types/Entity';
 import defaults from '@/utils/constants/defaults';
 
 const entity: Entity = {

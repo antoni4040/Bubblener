@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import Entity from '@/utils/types/Entity';
-import EntityColors from '@/utils/types/EntityColors';
+import type Entity from '@/utils/types/Entity';
+import type EntityColors from '@/utils/types/EntityColors';
 import { getEntityInk } from '@/utils/entityColors';
 
 interface HighlightOverlayProps {
@@ -212,7 +212,8 @@ const HighlightOverlay = ({
             })}
 
             {focused !== null && bubbleRect && connectors.map((anchor, i) => {
-                const ink = getEntityInk(entities[focused].entity_type, colors);
+                // `focused` only ever holds an index into `entities`.
+                const ink = getEntityInk(entities[focused]!.entity_type, colors);
                 // Leave from the baseline, so the connector reads as the
                 // underline continuing outward rather than a strikethrough...
                 const from = { x: anchor.right + 2, y: anchor.bottom };

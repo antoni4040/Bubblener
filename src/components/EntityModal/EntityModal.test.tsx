@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { screen } from '@testing-library/react';
 import { renderWithMantine } from '@/test/renderWithMantine';
 import EntityModal from './EntityModal';
-import Entity from '@/utils/types/Entity';
+import type Entity from '@/utils/types/Entity';
 import defaults from '@/utils/constants/defaults';
 
 const entity: Entity = {

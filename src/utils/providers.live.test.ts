@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     GeminiAPIRequest, ChatGPTAPIRequest, DeepSeekAPIRequest, OllamaAPIRequest,
-    ProviderResponse, ProviderRequest,
+    type ProviderResponse, type ProviderRequest,
 } from '@/utils/promptUtils';
 import parseEntitiesResponse from '@/utils/parseEntitiesResponse';
 import models from '@/utils/constants/models';
@@ -136,7 +136,7 @@ const describeProvider = (
             expect(partials.length, 'no partial callbacks fired').toBeGreaterThan(1);
             // Each callback carries everything so far, so lengths only grow.
             for (let i = 1; i < partials.length; i++) {
-                expect(partials[i]).toBeGreaterThanOrEqual(partials[i - 1]);
+                expect(partials[i]).toBeGreaterThanOrEqual(partials[i - 1]!);
             }
             expect(partials.at(-1)).toBe(response.text.length);
         });

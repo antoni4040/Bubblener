@@ -90,7 +90,7 @@ export default defineBackground(() => {
         // Manifest V3 method (Chrome, newer Firefox)
         await browser.scripting.executeScript({
           target: { tabId: tab.id },
-          files: ['content-scripts/content.js']
+          files: ['/content-scripts/content.js']
         });
       } else if (browser.tabs?.executeScript) {
         // Manifest V2 method (Firefox, older Chrome)

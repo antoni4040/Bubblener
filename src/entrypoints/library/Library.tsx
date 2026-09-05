@@ -7,9 +7,9 @@ import starredEntities from '@/utils/storage/starredEntities';
 import hiddenEntities from '@/utils/storage/hiddenEntities';
 import bubbleColors from '@/utils/storage/bubbleColors';
 import defaults from '@/utils/constants/defaults';
-import { SavedEntities, SavedEntity } from '@/utils/types/SavedEntity';
+import { type SavedEntities, type SavedEntity } from '@/utils/types/SavedEntity';
 import { getEntityGradient, getEntityTextColor } from '@/utils/entityColors';
-import EntityColors from '@/utils/types/EntityColors';
+import type EntityColors from '@/utils/types/EntityColors';
 import bubblenerLogo from '/icon-128.png';
 
 const newestFirst = (entities: SavedEntities): SavedEntity[] =>

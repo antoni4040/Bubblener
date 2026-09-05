@@ -1,4 +1,4 @@
-import TimingStats from '@/utils/types/TimingStats';
+import type TimingStats from '@/utils/types/TimingStats';
 
 /** Past this many samples the running totals are halved, so the estimate
  *  tracks current conditions instead of averaging in last month's network. */

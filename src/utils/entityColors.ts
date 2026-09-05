@@ -1,5 +1,5 @@
-import ColorSettings from '@/utils/types/ColorSettings';
-import EntityColors from '@/utils/types/EntityColors';
+import type ColorSettings from '@/utils/types/ColorSettings';
+import type EntityColors from '@/utils/types/EntityColors';
 
 const FALLBACK: ColorSettings = {
     gradientStart: '#8360c3',

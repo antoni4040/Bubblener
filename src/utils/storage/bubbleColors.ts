@@ -1,5 +1,5 @@
 import defaults from "../constants/defaults";
-import EntityColors from "../types/EntityColors";
+import type EntityColors from "../types/EntityColors";
 
 const bubbleColors = storage.defineItem<EntityColors>('local:bubbleColors', {
     defaultValue: {

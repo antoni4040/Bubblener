@@ -1,4 +1,4 @@
-import Entity from '@/utils/types/Entity';
+import type Entity from '@/utils/types/Entity';
 
 /** An entity the user acted on, kept with where it was found. */
 export interface SavedEntity extends Entity {

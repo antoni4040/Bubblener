@@ -1,4 +1,4 @@
-import TokenUsage from "@/utils/types/TokenUsage";
+import type TokenUsage from "@/utils/types/TokenUsage";
 
 export interface TokenUsageTotals extends TokenUsage {
     calls: number;

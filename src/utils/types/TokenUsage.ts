@@ -3,4 +3,4 @@ interface TokenUsage {
     output: number;
 }
 
-export default TokenUsage;
+export type { TokenUsage as default };

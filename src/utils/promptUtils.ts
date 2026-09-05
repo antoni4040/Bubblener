@@ -2,7 +2,7 @@ import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import EntitiesSchema from "@/utils/types/EntitiesSchema";
-import TokenUsage from "@/utils/types/TokenUsage";
+import type TokenUsage from "@/utils/types/TokenUsage";
 
 export interface ProviderResponse {
     text: string;

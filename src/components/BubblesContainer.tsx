@@ -3,12 +3,12 @@ import defaults from '@/utils/constants/defaults';
 import themes from '@/utils/constants/themes';
 import getVisibleTextOnScreen, { getContentRoot } from '@/utils/domUtils';
 import findMentions, { usableTerms } from '@/utils/findMentions';
-import mergeEntities, { RankedEntity } from '@/utils/mergeEntities';
+import mergeEntities, { type RankedEntity } from '@/utils/mergeEntities';
 import { isWithinReach } from '@/utils/entityDistance';
 import entityKey from '@/utils/entityKey';
 import starredEntities from '@/utils/storage/starredEntities';
 import hiddenEntities from '@/utils/storage/hiddenEntities';
-import { SavedEntities, SavedEntity } from '@/utils/types/SavedEntity';
+import { type SavedEntities, type SavedEntity } from '@/utils/types/SavedEntity';
 import maxNumberOfElements from '@/utils/storage/maxNumberOfElements';
 import HighlightOverlay from './HighlightOverlay/HighlightOverlay';
 import bubbleColors from '@/utils/storage/bubbleColors';
@@ -18,12 +18,12 @@ import themeStorage from '@/utils/storage/theme';
 import bubbleSize from '@/utils/storage/bubbleSize';
 import bubbleTransparency from '@/utils/storage/bubbleTransparency';
 import textHighlighting from '@/utils/storage/textHighlighting';
-import Entity from '@/utils/types/Entity';
-import TokenUsage from '@/utils/types/TokenUsage';
+import type Entity from '@/utils/types/Entity';
+import type TokenUsage from '@/utils/types/TokenUsage';
 import formatTokens from '@/utils/formatTokens';
 import { ActionIcon, useMantineColorScheme } from '@mantine/core';
 import { IconRefresh, IconX } from '@tabler/icons-react';
-import { CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
 import EntityBubble from './EntityBubble/EntityBubble';
 import EntityModal from './EntityModal/EntityModal';
 import ErrorToast from './ErrorToast/ErrorToast';
@@ -306,7 +306,8 @@ const BubblesContainer = () => {
         const inReach = found.map((ranges, index) =>
             // A starred entity was pinned deliberately; distance must not
             // retire it the way it retires the rest.
-            starred[entityKey(entities[index].entity_name)] !== undefined
+            // `found` is a map over `entities`, so the index always lands.
+            starred[entityKey(entities[index]!.entity_name)] !== undefined
             || isWithinReach(
                 ranges.map((range) => range.getBoundingClientRect()),
                 window.innerHeight,

@@ -19,7 +19,7 @@ npm run dev              # Chrome dev build + auto-reload
 npm run dev:firefox
 
 npm run compile          # tsc --noEmit — run this before declaring anything done
-npm test                 # Vitest unit suite (116 tests / 16 files, ~30s)
+npm test                 # Vitest unit suite (139 tests / 18 files, ~30s)
 npm run test:watch
 npm run test:coverage    # v8 coverage; components + utils, entrypoints excluded
 
@@ -65,6 +65,13 @@ Running it with **nothing** configured fails deliberately, rather than
 reporting "16 skipped", which reads exactly like a pass. Keys are read for
 presence only and never logged; the extension itself always takes its key from
 browser storage and never reads these files.
+
+One seam does get checked offline: `schemaFormat.test.ts` runs the real
+`zodTextFormat(EntitiesSchema, ...)` and asserts the JSON Schema ChatGPT is
+actually constrained by — strictness, the required fields, the entity-type
+enum, and that `contextual_enrichment` stays `["string", "null"]`. No network,
+no key, and it is the one place a Zod or OpenAI major that reshaped that schema
+would show up before a real call failed.
 
 Live tests are `*.live.test.ts` and are excluded from `vitest.config.ts`, so
 `npm test` and CI stay offline and free. They run only through
@@ -149,6 +156,10 @@ Each of these cost real debugging time here.
   looked fine. The theme reaches them by setting `--mantine-color-*`, `--mantine-radius-*` and the
   font vars on the wrapper `<div>` in `BubblesContainer`, plus explicit `color` on modal text.
   Anything relying on scheme-derived inheritance inside the shadow root will look wrong.
+- **`public/` is copied verbatim into the shipped extension.** Anything dropped
+  in there is published to users and counted in the store bundle — README
+  screenshots belong in `docs/`, not `public/`. Only the four icons are needed.
+- **Node >= 22 is required** by vitest 5, wxt 0.21 and openai 7; CI pins it.
 - **`scripting` must stay in `wxt.config.ts` permissions.** Without it `browser.scripting` is
   `undefined`, activation dies with "No script injection method available", and the failure is a
   console log plus a generic notification — the extension just silently does nothing.
