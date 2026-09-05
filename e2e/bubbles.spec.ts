@@ -548,3 +548,39 @@ test('an unblocked site still works, so the gate is not simply off', async ({ co
 
     await expect(page.getByText(TEST_ENTITY.entity_name, { exact: true })).toBeVisible();
 });
+
+test('exports a real file from the Library page, without the API key', async ({
+    context, background, extensionId,
+}) => {
+    // The download path — Blob, object URL, anchor click — is stubbed out
+    // entirely under jsdom, so this is the only place it is really exercised.
+    await background.evaluate(() => chrome.storage.local.set({
+        apiKey: 'sk-super-secret-value',
+        theme: 'Cyberpunk',
+        blockedSites: ['bank.example.com'],
+    }));
+
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/library.html`);
+
+    const downloadPromise = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Export' }).click();
+    const download = await downloadPromise;
+
+    expect(download.suggestedFilename()).toMatch(/^bubblener-settings-\d{4}-\d{2}-\d{2}\.json$/);
+
+    const stream = await download.createReadStream();
+    const contents = await new Promise<string>((resolve, reject) => {
+        let text = '';
+        stream.on('data', (chunk) => { text += chunk; });
+        stream.on('end', () => resolve(text));
+        stream.on('error', reject);
+    });
+
+    expect(contents).not.toContain('sk-super-secret-value');
+    expect(contents).not.toContain('apiKey');
+
+    const parsed = JSON.parse(contents);
+    expect(parsed.settings.theme).toBe('Cyberpunk');
+    expect(parsed.settings.blockedSites).toEqual(['bank.example.com']);
+});

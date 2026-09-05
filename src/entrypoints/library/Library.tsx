@@ -1,8 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-    ActionIcon, Anchor, Badge, Group, Image, Paper, Stack, Tabs, Text, Title,
+    ActionIcon, Anchor, Badge, Button, Group, Image, Paper, Stack, Tabs, Text, Title,
 } from '@mantine/core';
-import { IconStarFilled, IconEyeOff, IconTrash, IconRestore } from '@tabler/icons-react';
+import {
+    IconStarFilled, IconEyeOff, IconTrash, IconRestore, IconDownload, IconUpload,
+} from '@tabler/icons-react';
+import { buildExport, exportFilename, parseImport, type ImportedData } from '@/utils/settingsTransfer';
+import {
+    applyImport, hasEntities, readExportableSettings, type ImportMode,
+} from '@/utils/storage/exportableSettings';
 import starredEntities from '@/utils/storage/starredEntities';
 import hiddenEntities from '@/utils/storage/hiddenEntities';
 import bubbleColors from '@/utils/storage/bubbleColors';
@@ -89,6 +95,57 @@ const Library = () => {
         await hiddenEntities.setValue(next);
     };
 
+    const fileInput = useRef<HTMLInputElement>(null);
+    const [transferNote, setTransferNote] = useState<
+        { tone: 'ok' | 'bad'; text: string } | null
+    >(null);
+    /** A validated file waiting on the merge-or-replace decision. */
+    const [pending, setPending] = useState<ImportedData | null>(null);
+
+    const handleExport = async () => {
+        const payload = buildExport(await readExportableSettings(), starred, hidden);
+        const url = URL.createObjectURL(
+            new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }),
+        );
+
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = exportFilename();
+        link.click();
+        URL.revokeObjectURL(url);
+
+        setTransferNote({
+            tone: 'ok',
+            text: 'Exported. Your API key is not in the file — you will need to enter it again on the other machine.',
+        });
+    };
+
+    const runImport = async (data: ImportedData, mode: ImportMode) => {
+        setPending(null);
+        const result = await applyImport(data, mode);
+        const parts = [
+            `${result.settings} settings`,
+            `${result.starred} starred`,
+            `${result.hidden} hidden`,
+        ];
+        setTransferNote({ tone: 'ok', text: `Imported ${parts.join(', ')}.` });
+    };
+
+    const handleImportFile = async (file: File) => {
+        try {
+            const data = parseImport(await file.text());
+            setTransferNote(null);
+            // Replacing can destroy curated lists, so the choice is the user's.
+            // When the file has no entities there is nothing to choose between,
+            // and asking would be a question with one real answer.
+            if (hasEntities(data)) setPending(data);
+            else await runImport(data, 'merge');
+        } catch (error: any) {
+            setPending(null);
+            setTransferNote({ tone: 'bad', text: error?.message ?? 'Could not read that file.' });
+        }
+    };
+
     const starredList = newestFirst(starred);
     const hiddenList = newestFirst(hidden);
 
@@ -102,6 +159,98 @@ const Library = () => {
                 <Image src={bubblenerLogo} h={48} w={48} alt="" />
                 <Title order={2}>Bubblener Library</Title>
             </Group>
+
+            <Paper withBorder p="md" radius="var(--mantine-radius-md)">
+                <Stack gap="sm">
+                    <div>
+                        <Title order={5} style={{ margin: 0 }}>Settings and lists</Title>
+                        <Text size="sm" c="dimmed">
+                            Carry your setup to another machine. Settings are replaced;
+                            starred and hidden entities are added to what is already here.
+                            Your API key is never included.
+                        </Text>
+                    </div>
+
+                    <Group gap="sm">
+                        <Button
+                            variant="light"
+                            leftSection={<IconDownload size={16} />}
+                            onClick={handleExport}
+                        >
+                            Export
+                        </Button>
+                        <Button
+                            variant="light"
+                            leftSection={<IconUpload size={16} />}
+                            onClick={() => fileInput.current?.click()}
+                        >
+                            Import
+                        </Button>
+                        <input
+                            ref={fileInput}
+                            type="file"
+                            accept="application/json,.json"
+                            aria-label="Settings file to import"
+                            style={{ display: 'none' }}
+                            onChange={(event) => {
+                                const file = event.currentTarget.files?.[0];
+                                // Cleared so re-picking the same file fires onChange again.
+                                event.currentTarget.value = '';
+                                if (file) handleImportFile(file);
+                            }}
+                        />
+                    </Group>
+
+                    {pending && (
+                        <Paper withBorder p="sm" radius="var(--mantine-radius-sm)">
+                            <Stack gap="xs">
+                                <Text size="sm">
+                                    That file holds{' '}
+                                    <strong>{Object.keys(pending.starred).length} starred</strong>
+                                    {' '}and{' '}
+                                    <strong>{Object.keys(pending.hidden).length} hidden</strong>
+                                    {' '}entities. You currently have {starredList.length} and{' '}
+                                    {hiddenList.length}.
+                                </Text>
+                                <Text size="sm" c="dimmed">
+                                    Settings are replaced either way. Replacing makes your lists
+                                    exactly what the file holds — anything not in it is lost.
+                                </Text>
+                                <Group gap="sm">
+                                    <Button
+                                        size="xs"
+                                        onClick={() => runImport(pending, 'merge')}
+                                    >
+                                        Add to my lists
+                                    </Button>
+                                    <Button
+                                        size="xs"
+                                        variant="light"
+                                        color="red"
+                                        onClick={() => runImport(pending, 'replace')}
+                                    >
+                                        Replace my lists
+                                    </Button>
+                                    <Button
+                                        size="xs"
+                                        variant="subtle"
+                                        color="gray"
+                                        onClick={() => setPending(null)}
+                                    >
+                                        Cancel
+                                    </Button>
+                                </Group>
+                            </Stack>
+                        </Paper>
+                    )}
+
+                    {transferNote && (
+                        <Text size="sm" c={transferNote.tone === 'ok' ? 'green' : 'red'}>
+                            {transferNote.text}
+                        </Text>
+                    )}
+                </Stack>
+            </Paper>
 
             <Tabs defaultValue="starred">
                 <Tabs.List>

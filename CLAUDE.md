@@ -19,7 +19,7 @@ npm run dev              # Chrome dev build + auto-reload
 npm run dev:firefox
 
 npm run compile          # tsc --noEmit — run this before declaring anything done
-npm test                 # Vitest unit suite (167 tests / 19 files, ~35s)
+npm test                 # Vitest unit suite (212 tests / 22 files, ~40s)
 npm run test:watch
 npm run test:coverage    # v8 coverage; components + utils, entrypoints excluded
 
@@ -216,6 +216,20 @@ replacement goes into a separate draft. There is nothing to copy out of the sett
 Saving is guarded by `apiKeyDirty`: **an unrelated settings save must not touch the stored key.**
 Only typing a replacement or hitting reset marks it dirty. Dropping that guard silently wipes
 people's keys when they change an unrelated setting.
+
+**Export and import must not become a hole in that.** `utils/settingsTransfer.ts`
+works from an allowlist (`SETTING_SCHEMAS`), and `apiKey` is simply not in it —
+so the key cannot travel in either direction, including when someone hand-edits
+it into a JSON file. `tokenUsage`/`timingStats` are excluded too, as
+machine-local history. An imported file is untrusted input: every field is
+Zod-validated on its own and a bad one is skipped rather than aborting the
+import, the same per-item approach `parseEntitiesResponse` takes. Settings
+always replace; for the starred/hidden lists the user picks *Add* or *Replace*
+after seeing both counts, and nothing is written until they do — replacing can
+destroy curated lists, so it must never be a silent default. A file with no
+entities skips the question. `storage/exportableSettings.ts` is
+`satisfies Record<SettingKey, …>`, so the storage map and the allowlist cannot
+drift apart without failing `tsc`.
 
 What this does *not* protect against, so don't claim otherwise: `chrome.storage.local` is plaintext
 on disk, readable by anything with filesystem access to the browser profile or an unlocked DevTools

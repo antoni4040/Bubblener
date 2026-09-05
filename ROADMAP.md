@@ -25,7 +25,7 @@ Decisions taken:
 - A one-click **"Never on this site"** matters more than the text box. A list
   of URL patterns is a thing people configure zero times.
 
-## 2. Import / export
+## 2. Import / export — done
 
 The sync story we deliberately don't have. Storage is `local:`, never `sync:`,
 so the key never reaches a browser account — the price is that a new machine
@@ -41,6 +41,19 @@ means re-entering every setting and losing every starred entity.
   Exclude, or put behind their own checkbox.
 - Belongs on the Library page rather than the popup: it's already a full page,
   and the starred/hidden lists are half of what you'd export.
+
+Settled while building it:
+
+- **Settings always replace; the lists are the user's choice.** Importing a
+  file that carries entities shows what it holds against what you already have,
+  then offers *Add* or *Replace*. Replacing can destroy curated lists, so it is
+  never a default — but it is a legitimate thing to want, so it is offered
+  rather than decided for the user. Merge lets the imported copy win a key
+  clash. A settings-only file skips the question entirely: it would have one
+  real answer.
+- The storage map in `storage/exportableSettings.ts` is `satisfies
+  Record<SettingKey, …>`, so a schema added without a storage item fails
+  `tsc` rather than silently never being exported. Verified by breaking it.
 
 ## 3. Settings sync via the browser account
 

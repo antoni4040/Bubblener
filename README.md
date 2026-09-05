@@ -18,6 +18,7 @@ Built with React + WXT + Mantine.
 -   **Entities accumulate**: results stream in and are added as they arrive, rather than the whole set being replaced at once. Entities you've scrolled far past are retired automatically.
 -   **Ranked, not truncated**: the model scores how central each entity is to the passage, and the least important lose their place first when you're at your bubble limit.
 -   **Star and hide**: pin an entity to keep it regardless of limits and distance, or hide one for good. Both lists are browsable in a separate Library page.
+-   **Take it with you**: export your settings and your starred/hidden lists to a JSON file from the Library page, and import them on another machine — choosing whether the imported entities are added to your lists or replace them. Your API key is never written to the file, so you enter it once per machine.
 -   **Rich context**: hover a bubble for a quick description; click for a summary drawn from the text plus background from the model's own knowledge.
 
 ### Setup and control
