@@ -88,7 +88,8 @@ function App({ onThemeChange }: AppProps = {}) {
   const [tier, setTier] = useState<ModelTierEnum>(defaults.modelTier);
   const [localModel, setLocalModel] = useState(defaults.ollamaModel);
   const [launcherOn, setLauncherOn] = useState(defaults.showLauncher);
-  const [analyseState, setAnalyseState] = useState<'idle' | 'done' | 'unsupported'>('idle');
+  const [analyseState, setAnalyseState] =
+    useState<'idle' | 'done' | 'unsupported' | 'refused'>('idle');
   // The blocklist is deliberately *not* part of the staged settings below. It
   // is a privacy control: "never on this site" has to take effect the moment
   // it is clicked, not once the user remembers to press Save.
@@ -176,12 +177,17 @@ function App({ onThemeChange }: AppProps = {}) {
     highlightsOn, tier, localModel, launcherOn,
   });
   const savedSettingsRef = useRef<string | null>(null);
+  /** Set by "Reset All": adopt the next staged snapshot as the saved state. */
+  const rebaselineRef = useRef(false);
 
   useEffect(() => {
     if (!hasLoaded) return;
-    if (savedSettingsRef.current === null) {
-      // The freshly loaded values are the baseline, not pending changes.
+    if (savedSettingsRef.current === null || rebaselineRef.current) {
+      // The freshly loaded — or freshly reset — values are the baseline, not
+      // pending changes.
       savedSettingsRef.current = stagedSettings;
+      rebaselineRef.current = false;
+      setDirty(false);
       return;
     }
     setDirty(stagedSettings !== savedSettingsRef.current);
@@ -253,12 +259,25 @@ function App({ onThemeChange }: AppProps = {}) {
     }
   };
 
-  // Resets appearance and behaviour only. The blocklist is deliberately left
-  // alone, as the key and the saved entities are: quietly un-blocking someone's
-  // bank because they wanted their bubble colours back would be a nasty
-  // surprise, and it is the one setting where the safe default is to keep it.
+  /**
+   * Resets every setting the popup stages, plus the provider selection.
+   *
+   * Three things are deliberately kept, and the label says so:
+   *  - the **API key**, which the popup cannot read back and must not destroy;
+   *  - the **blocklist**, because quietly un-blocking someone's bank so they
+   *    could have their bubble colours back would be a nasty surprise;
+   *  - the **starred and hidden lists**, which are curated data, not settings.
+   */
   const handleResetAll = async () => {
     try {
+      // Armed *before* the state updates below, not after the storage writes.
+      // React can render the reset values while those writes are still
+      // pending, and the dirty-state effect would then compare the defaults
+      // against the pre-reset baseline and report "Unsaved changes". Setting
+      // a ref afterwards does not re-run the effect, so the false dirty state
+      // would simply stay. (Mock storage resolves too fast to show this.)
+      rebaselineRef.current = true;
+
       setPixels(defaults.scrollThreshold);
       setMaxElements(defaults.maxElements);
       setColorSettings(defaults.colorSettings);
@@ -270,6 +289,10 @@ function App({ onThemeChange }: AppProps = {}) {
       setBubbleSize(defaults.bubbleSize);
       setTransparent(defaults.bubbleTransparency);
       setHighlightsOn(defaults.textHighlighting);
+      // Previously missed, so "Reset All" quietly left three settings behind.
+      setModelAPI(defaults.modelAPI);
+      setLocalModel(defaults.ollamaModel);
+      setLauncherOn(defaults.showLauncher);
 
       // Save default values to storage
       await Promise.all([
@@ -283,13 +306,29 @@ function App({ onThemeChange }: AppProps = {}) {
         bubbleSize.setValue(defaults.bubbleSize),
         bubbleTransparency.setValue(defaults.bubbleTransparency),
         textHighlighting.setValue(defaults.textHighlighting),
-        modelTier.setValue(defaults.modelTier)
+        modelTier.setValue(defaults.modelTier),
+        modelAPI.setValue(defaults.modelAPI),
+        ollamaModel.setValue(defaults.ollamaModel),
+        showLauncher.setValue(defaults.showLauncher)
       ]);
+
+      // Normally the dirty-state effect has already consumed the marker. It
+      // will not have if the snapshot did not change — resetting settings that
+      // were all at their defaults already — and leaving it armed would
+      // wrongly re-baseline the user's *next* edit.
+      if (rebaselineRef.current) {
+        rebaselineRef.current = false;
+        setDirty(false);
+      }
 
       setStatus('All settings reset to defaults!');
       setStatusType('success');
       setTimeout(() => setStatus(''), 3000);
     } catch (error) {
+      // The writes failed, so React is showing defaults that storage does not
+      // have: genuinely unsaved, and it must not be re-baselined as saved.
+      rebaselineRef.current = false;
+      setDirty(true);
       setStatus('Failed to reset settings.');
       setStatusType('error');
       console.error(error);
@@ -339,7 +378,18 @@ function App({ onThemeChange }: AppProps = {}) {
       setAnalyseState('unsupported');
       return;
     }
-    await browser.runtime.sendMessage({ activate: true, tabId: tab.id }).catch(() => { });
+    // The background reports whether it actually activated — a blocked site or
+    // a failed injection both come back false. Discarding that told the user it
+    // had worked and then closed the popup on them.
+    const reply = await browser.runtime
+      .sendMessage({ activate: true, tabId: tab.id })
+      .catch(() => null);
+
+    if (!reply?.activated) {
+      setAnalyseState('refused');
+      return;
+    }
+
     setAnalyseState('done');
     setTimeout(() => window.close(), 400);
   };
@@ -470,7 +520,9 @@ function App({ onThemeChange }: AppProps = {}) {
           <Text size="xs" ta="center" style={{ color: 'var(--mantine-color-dimmed)' }}>
             {analyseState === 'unsupported'
               ? 'This kind of page cannot be analysed — try an ordinary web page.'
-              : 'Also available from the launch button on the page itself.'}
+              : analyseState === 'refused'
+                ? 'Could not start on this page. It may be on your blocklist, or the page may block extensions.'
+                : 'Also available from the launch button on the page itself.'}
           </Text>
         </Stack>
       )}

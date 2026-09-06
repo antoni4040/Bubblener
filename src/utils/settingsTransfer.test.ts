@@ -158,6 +158,38 @@ describe('parseImport and the entity lists', () => {
     });
 });
 
+describe('parseImport hardens numbers and keys', () => {
+    it('rejects values the popup could never produce', () => {
+        const result = parseImport(file({
+            settings: {
+                bubbleSize: -5, maxNumberOfElements: 0,
+                maxNumberOfCharacters: 1e9, pixelDistance: 0,
+            },
+        }));
+
+        expect(result.settings).toEqual({});
+        expect(result.skipped.sort()).toEqual(
+            ['bubbleSize', 'maxNumberOfCharacters', 'maxNumberOfElements', 'pixelDistance'],
+        );
+    });
+
+    it('still accepts values inside the bounds', () => {
+        const result = parseImport(file({
+            settings: { bubbleSize: 13, maxNumberOfElements: 8 },
+        }));
+        expect(result.settings).toEqual({ bubbleSize: 13, maxNumberOfElements: 8 });
+    });
+
+    it('re-keys entities by name rather than trusting the file', () => {
+        // These maps are looked up by `entityKey(entity_name)`; a mismatched
+        // key stores an entity that can never be found again.
+        const result = parseImport(file({
+            starred: { 'WRONG KEY': { entity_name: 'Alice', entity_type: 'Person' } },
+        }));
+        expect(Object.keys(result.starred)).toEqual(['alice']);
+    });
+});
+
 describe('a round trip', () => {
     it('survives export then import unchanged', () => {
         const starred = {

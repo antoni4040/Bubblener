@@ -627,3 +627,133 @@ test('no launcher appears on a blocked site', async ({ context, background }) =>
 
     await expect(page.locator('bubblener-launcher')).toHaveCount(0);
 });
+
+test('blocking a site that is already active stops it at once', async ({ context, background }) => {
+    // The blocklist is checked twice, and only the activation check was ever
+    // covered: every other blocklist test blocks the site *before* activating,
+    // so it never reaches the message path. This is the layer that has to stop
+    // a tab the user already has open.
+    let providerCalls = 0;
+    await context.route(DEEPSEEK_URL, (route) => {
+        providerCalls++;
+        return route.fulfill(streamEntities([TEST_ENTITY]));
+    });
+
+    const page = await activateOnArticle({ context, background });
+    await expect(page.getByText(TEST_ENTITY.entity_name, { exact: true })).toBeVisible();
+    expect(providerCalls).toBe(1);
+
+    // Blocked from the settings while the tab sits there, already analysed.
+    await background.evaluate(() => chrome.storage.local.set({ blockedSites: ['example.com'] }));
+
+    // Force a fresh analysis the way the reload control does.
+    await page.getByRole('button', { name: 'Reload bubbles' }).click();
+
+    // Refused, and said so rather than leaving the spinner running.
+    await expect(page.getByText(/on your blocklist/)).toBeVisible();
+    expect(providerCalls).toBe(1);
+    await expect(page.getByText('Processing entities...')).toHaveCount(0);
+});
+
+test('activation is recorded where a restarted worker can find it', async ({ context, background }) => {
+    // Activation used to live in a plain in-memory Set. Chrome routinely
+    // terminates an idle MV3 service worker, and the tab then looked
+    // deactivated for no reason the reader could see. Session storage outlives
+    // the worker, so the recovered state is what this checks.
+    await context.route(DEEPSEEK_URL, (route) => route.fulfill(streamEntities([TEST_ENTITY])));
+    const page = await activateOnArticle({ context, background });
+    await expect(page.getByText(TEST_ENTITY.entity_name, { exact: true })).toBeVisible();
+
+    const tabId = await background.evaluate(async (url: string) => {
+        const tabs = await chrome.tabs.query({ url });
+        return tabs[0]?.id;
+    }, ARTICLE_URL);
+
+    const stored = await background.evaluate(async () =>
+        (await chrome.storage.session.get('activatedTabs')).activatedTabs);
+    expect(stored).toContain(tabId);
+
+    // And closing the tab takes it back out again.
+    await page.close();
+    await expect.poll(async () => background.evaluate(async () =>
+        (await chrome.storage.session.get('activatedTabs')).activatedTabs ?? []))
+        .not.toContain(tabId);
+});
+
+test('blocking a site stops an analysis that is already running', async ({ context, background }) => {
+    // Not the same as refusing the next request: the user blocks the site
+    // *during* an analysis and never touches Reload. Without a blocklist
+    // watcher the request ran on, spent its tokens and painted its bubbles.
+    let release: (() => void) | undefined;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+
+    await context.route(DEEPSEEK_URL, async (route) => {
+        await held;                       // the provider is still "thinking"
+        return route.fulfill(streamEntities([TEST_ENTITY]));
+    });
+
+    const page = await activateOnArticle({ context, background });
+    await expect(page.getByText('Processing entities...')).toBeVisible();
+
+    // Blocked from the settings while that request is in flight.
+    await background.evaluate(() => chrome.storage.local.set({ blockedSites: ['example.com'] }));
+
+    await expect(page.getByText(/analysis was stopped/)).toBeVisible();
+    await expect(page.getByText('Processing entities...')).toHaveCount(0);
+
+    // Even once the provider finally answers, nothing is shown for it.
+    release!();
+    await page.waitForTimeout(1500);
+    await expect(page.getByText(TEST_ENTITY.entity_name, { exact: true })).toHaveCount(0);
+});
+
+test('a killed service worker recovers activation and keeps working', async ({ context, background }) => {
+    // The lifecycle this was all for. Activation used to live in worker memory,
+    // so an idle Chrome terminating the worker silently deactivated the tab
+    // while its content script carried on sending.
+    const restartedEntity = {
+        ...TEST_ENTITY,
+        // Unlike the first response, this name occurs elsewhere in the
+        // article, so it survives the UI's mention/distance validation while
+        // remaining an unmistakably new post-restart result.
+        entity_name: 'Test Article',
+        description: 'An entity returned only after the service worker restart.',
+        summary_from_text: 'This distinct response proves the restarted worker completed a new provider request.',
+    };
+    let providerCalls = 0;
+    await context.route(DEEPSEEK_URL, (route) => {
+        providerCalls += 1;
+        const result = providerCalls === 1 ? TEST_ENTITY : restartedEntity;
+        return route.fulfill(streamEntities([result]));
+    });
+    const page = await activateOnArticle({ context, background });
+    await expect(page.getByText(TEST_ENTITY.entity_name, { exact: true })).toBeVisible();
+
+    const killWorker = async () => {
+        const client = await context.newCDPSession(page);
+        const { targetInfos } = await client.send('Target.getTargets') as any;
+        for (const target of targetInfos.filter((t: any) => t.type === 'service_worker')) {
+            await client.send('Target.closeTarget', { targetId: target.targetId });
+        }
+        await client.detach().catch(() => { });
+    };
+
+    await killWorker();
+    await page.waitForTimeout(1000);
+
+    // The still-mounted content script now talks to a freshly started worker.
+    await page.getByRole('button', { name: 'Reload bubbles' }).click();
+    await expect.poll(() => providerCalls).toBe(2);
+    await expect(page.locator('#entity-bubbles-container')
+        .getByText(restartedEntity.entity_name, { exact: true })).toBeVisible();
+    await expect(page.getByText('Processing entities...')).toHaveCount(0);
+    await expect(page.getByText(/no longer active/)).toHaveCount(0);
+
+    // And it really is session storage carrying it: wipe that, and the same
+    // gesture is refused. Without this the test above could pass vacuously.
+    const worker = context.serviceWorkers().at(-1)!;
+    await worker.evaluate(() => chrome.storage.session.clear());
+    await page.getByRole('button', { name: 'Reload bubbles' }).click();
+    await expect(page.getByText(/no longer active/)).toBeVisible();
+    expect(providerCalls).toBe(2);
+});

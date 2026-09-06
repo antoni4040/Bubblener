@@ -3,6 +3,7 @@ import ThemeEnum from '@/utils/types/themeEnum';
 import ModelAPIsEnum from '@/utils/types/modelAPIsEnum';
 import ModelTierEnum from '@/utils/types/modelTierEnum';
 import BubblePositionEnum from '@/utils/types/bubblePositionEnum';
+import entityKey from '@/utils/entityKey';
 
 /**
  * Moving settings between machines.
@@ -26,11 +27,24 @@ import BubblePositionEnum from '@/utils/types/bubblePositionEnum';
 
 export const EXPORT_VERSION = 1;
 
+// Long enough for `rgba(...)` or a named colour, short enough that a damaged
+// file cannot push kilobytes of text into a CSS variable.
+const cssColor = z.string().min(1).max(64);
+
 const colorSettings = z.object({
-    gradientStart: z.string(),
-    gradientEnd: z.string(),
-    textColor: z.string(),
+    gradientStart: cssColor,
+    gradientEnd: cssColor,
+    textColor: cssColor,
 });
+
+/**
+ * Mirrors the bounds the popup's NumberInputs enforce.
+ *
+ * Without them an import was the one way to get values the UI cannot produce:
+ * a negative bubble size, a zero element limit, a character limit of 10^9.
+ * Those do not fail loudly — they quietly make the extension useless.
+ */
+const bounded = (min: number, max: number) => z.number().int().min(min).max(max);
 
 const entityColors = z.object({
     person: colorSettings,
@@ -51,17 +65,19 @@ export const SETTING_SCHEMAS = {
     modelAPI: z.enum(ModelAPIsEnum),
     modelTier: z.enum(ModelTierEnum),
     bubblePosition: z.enum(BubblePositionEnum),
-    ollamaModel: z.string(),
+    ollamaModel: z.string().max(128),
     bubbleColors: entityColors,
-    bubbleDistance: z.number().finite(),
-    bubbleSize: z.number().finite(),
+    bubbleDistance: bounded(10, 1000),
+    bubbleSize: bounded(9, 24),
     bubbleTransparency: z.boolean(),
     textHighlighting: z.boolean(),
     showLauncher: z.boolean(),
-    pixelDistance: z.number().finite(),
-    maxNumberOfElements: z.number().finite(),
-    maxNumberOfCharacters: z.number().finite(),
-    blockedSites: z.array(z.string()),
+    // The popup leaves this one unbounded; a scroll threshold of 0 would
+    // re-analyse on every pixel of movement, so it gets a floor here.
+    pixelDistance: bounded(50, 20_000),
+    maxNumberOfElements: bounded(1, 100),
+    maxNumberOfCharacters: bounded(1000, 100_000),
+    blockedSites: z.array(z.string().min(1).max(253)).max(1000),
 } as const;
 
 export type SettingKey = keyof typeof SETTING_SCHEMAS;
@@ -135,8 +151,15 @@ const parseEntityMap = (
     const out: Record<string, unknown> = {};
     for (const [key, entity] of Object.entries(value as Record<string, unknown>)) {
         const parsed = savedEntity.safeParse(entity);
-        if (parsed.success) out[key] = parsed.data;
-        else skipped.push(`${label}.${key}`);
+        if (!parsed.success) {
+            skipped.push(`${label}.${key}`);
+            continue;
+        }
+        // Re-keyed from the name rather than trusting the key in the file.
+        // These maps are looked up by `entityKey(entity_name)`; a hand-edited
+        // or mismatched key would store an entity that could never be found,
+        // so a starred entity would simply never come back.
+        out[entityKey(parsed.data.entity_name)] = parsed.data;
     }
     return out;
 };

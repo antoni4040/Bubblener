@@ -16,6 +16,7 @@ import { isSiteBlocked } from '@/utils/siteBlocking';
 import modelAPI from '@/utils/storage/modelAPI';
 import maxNumberOfElements from '@/utils/storage/maxNumberOfElements';
 import ModelAPIsEnum from '@/utils/types/modelAPIsEnum';
+import { createSerializer } from '@/utils/serialize';
 
 /** The provider is up but refusing work right now: capacity or rate limits.
  *  Nothing is wrong with the request, so say "try again" rather than
@@ -35,9 +36,43 @@ const isNetworkError = (error: any): boolean =>
   || /failed to fetch|networkerror|connection error|fetch failed|load failed/i
     .test(error?.message ?? '');
 
+/**
+ * Which tabs the user has activated.
+ *
+ * `session:`, not a plain `Set`: Chrome routinely terminates an idle Manifest
+ * V3 service worker, and in-memory state dies with it while the injected
+ * content script keeps running and keeps sending. The tab then looked
+ * deactivated for no reason the user could see. Session storage survives the
+ * restart, is cleared when the browser closes — which is the lifetime we want
+ * — and never touches disk.
+ */
+const activatedTabsItem = storage.defineItem<number[]>('session:activatedTabs', {
+  defaultValue: [],
+});
+
 export default defineBackground(() => {
-  // Track which tabs have the extension activated
-  const activatedTabs = new Set<number>();
+  // Reads and writes are serialized: two tabs activating at once would
+  // otherwise read the same list and one would erase the other.
+  const serializeTabs = createSerializer();
+  // Token totals and timing samples are read-modify-write against storage, and
+  // several tabs share this worker. Without this the later of two concurrent
+  // analyses simply erased the earlier one's numbers.
+  const serializeStats = createSerializer();
+
+  const isActivated = async (tabId: number) =>
+    (await activatedTabsItem.getValue()).includes(tabId);
+
+  const addActivatedTab = (tabId: number) => serializeTabs(async () => {
+    const tabs = await activatedTabsItem.getValue();
+    if (!tabs.includes(tabId)) await activatedTabsItem.setValue([...tabs, tabId]);
+  });
+
+  const removeActivatedTab = (tabId: number) => serializeTabs(async () => {
+    const tabs = await activatedTabsItem.getValue();
+    if (tabs.includes(tabId)) {
+      await activatedTabsItem.setValue(tabs.filter((id) => id !== tabId));
+    }
+  });
 
   /**
    * The analysis currently running for each tab.
@@ -104,7 +139,7 @@ export default defineBackground(() => {
 
     try {
       // Add tab to activated set
-      activatedTabs.add(tab.id);
+      await addActivatedTab(tab.id);
 
       // Use appropriate script injection method
       if (browser.scripting?.executeScript) {
@@ -143,7 +178,7 @@ export default defineBackground(() => {
         message: 'Could not activate Bubblener on this page.',
       });
       // Injection failed, so the tab is not really active after all.
-      activatedTabs.delete(tab.id);
+      await removeActivatedTab(tab.id);
       return false;
     }
   };
@@ -171,16 +206,60 @@ export default defineBackground(() => {
     console.error('Neither browser.action nor browser.browserAction is available.');
   }
 
-  // Clean up when tab is closed
-  browser.tabs.onRemoved.addListener((tabId) => {
-    activatedTabs.delete(tabId);
+  /**
+   * Forgets a tab, and stops whatever it was paying for.
+   *
+   * Dropping it from the activated list was never enough: the provider request
+   * ran to completion regardless, spending tokens on a page nobody is reading.
+   * Worse on navigation, where the tab id survives — the entry stayed in
+   * `inFlight`, so `isCurrent()` was still true and a late answer from the
+   * previous page could be delivered to the next one.
+   */
+  const forgetTab = async (tabId: number) => {
+    inFlight.get(tabId)?.controller.abort();
+    inFlight.delete(tabId);
+    await removeActivatedTab(tabId);
+  };
+
+  /**
+   * Blocking a site stops it *now*, including a request already in flight.
+   *
+   * The checks at activation and on the way in only govern the next request.
+   * Somebody who blocks a site mid-analysis has said stop — waiting for that
+   * analysis to finish, spend its tokens and paint its bubbles is not what
+   * they asked for. The text has already been sent and cannot be recalled,
+   * but nothing after it has to happen.
+   */
+  blockedSites.watch(async (patterns) => {
+    if (!patterns?.length) return;
+
+    for (const tabId of await activatedTabsItem.getValue()) {
+      // Only tabs with work actually running. This exists to stop that work;
+      // deactivating here as well would mean the *next* attempt reported
+      // "not active" instead of the real reason, which is that it is blocked.
+      const tab = await browser.tabs.get(tabId).catch(() => undefined);
+      if (!tab || !isSiteBlocked(tab.url, patterns)) continue;
+
+      // Read the entry only after the awaited tab lookup. A newer request may
+      // replace the old one during that yield; capturing it beforehand could
+      // abort the old controller and then accidentally delete the new entry.
+      const running = inFlight.get(tabId);
+      if (!running) continue;
+      running.controller.abort();
+      if (inFlight.get(tabId) === running) inFlight.delete(tabId);
+      await browser.tabs.sendMessage(tabId, {
+        error: {
+          title: 'Blocked here',
+          message: 'This site is now on your blocklist, so the analysis was stopped.',
+        },
+      }).catch(() => { /* page navigated away */ });
+    }
   });
 
-  // Clean up when tab is updated (navigated to new page)
+  browser.tabs.onRemoved.addListener((tabId) => { void forgetTab(tabId); });
+
   browser.tabs.onUpdated.addListener((tabId, changeInfo) => {
-    if (changeInfo.status === 'loading') {
-      activatedTabs.delete(tabId);
-    }
+    if (changeInfo.status === 'loading') void forgetTab(tabId);
   });
 
   // Process messages only from activated tabs
@@ -204,19 +283,44 @@ export default defineBackground(() => {
       return { activated };
     }
 
-    // Check if message has text and sender is from an activated tab
-    if (!request.text || !sender.tab?.id || !activatedTabs.has(sender.tab.id)) {
-      return;
+    if (!sender.tab?.id) return;   // nothing to answer to
+
+    /**
+     * Ends an analysis the page is already showing a spinner for.
+     *
+     * Every refusal below has to go through this. A bare `return` left the
+     * spinner running for ever, which reads as a hang rather than as a reason
+     * — and made a missing API key on a fresh install look identical to a slow
+     * model. One accepted request, exactly one terminal outcome.
+     */
+    const refuse = async (tabId: number, title: string, message: string) => {
+      console.log(`[Bubblener] ⊘ ${title}: ${message}`);
+      await browser.tabs.sendMessage(tabId, { error: { title, message } })
+        .catch(() => { /* page navigated away */ });
+    };
+
+    if (!request.text?.trim()) {
+      return refuse(sender.tab.id, 'Nothing to analyse',
+        'No readable text was found on the part of the page you are viewing.');
+    }
+
+    // Answered rather than ignored: an activation lost to a restarted service
+    // worker lands here, and silence is indistinguishable from a hang.
+    if (!(await isActivated(sender.tab.id))) {
+      return refuse(sender.tab.id, 'Not active here',
+        'Bubblener is no longer active on this tab. Start it again from the '
+        + 'button on the page or from the extension popup.');
     }
 
     // Checked again on the way in, not just at activation. Blocking a site the
     // user already has open must stop it immediately — otherwise an activated
     // tab keeps sending until it happens to navigate.
     if (await isBlocked(sender.tab.url)) {
-      console.log(`Refusing text from blocked site ${sender.tab.url}`);
-      activatedTabs.delete(sender.tab.id);
       inFlight.get(sender.tab.id)?.controller.abort();
-      return;
+      await removeActivatedTab(sender.tab.id);
+      return refuse(sender.tab.id, 'Blocked here',
+        'This site is on your blocklist, so nothing was read or sent. '
+        + 'Remove it in the extension settings to analyse it.');
     }
 
     console.log('Received text from activated content script. Processing...');
@@ -227,15 +331,17 @@ export default defineBackground(() => {
     // ignores the key entirely, so it must not be gated on one.
     const currentApiKey = await apiKey.getValue();
     if (!currentApiKey && currentModelAPI !== ModelAPIsEnum.Ollama) {
-      console.error('API Key not found. Please set it in the extension options.');
-      // Notify the user
       browser.notifications.create({
         type: 'basic',
         iconUrl: browser.runtime.getURL('/icon-128.png'),
         title: 'API Key Missing',
         message: 'Please set your API key in the extension options page.',
       });
-      return;
+      // Said on the page as well as in a notification: this is the first thing
+      // a fresh install hits, and a notification is easy to miss entirely.
+      return refuse(sender.tab.id, 'No API key',
+        `Add your ${currentModelAPI} API key in the extension popup, or switch `
+        + 'to Ollama to run a model locally without one.');
     }
 
     const maxElements = await maxNumberOfElements.getValue();
@@ -245,6 +351,19 @@ export default defineBackground(() => {
       : models[currentModelAPI][tier];
 
     const tabId = sender.tab.id;
+
+    // The storage watcher can only abort requests that have entered inFlight.
+    // Recheck after asynchronous provider/model preflight so a request that
+    // passed the first check just before a blocklist write cannot slip through
+    // and install itself after the watcher has already run.
+    if (await isBlocked(sender.tab.url)) {
+      inFlight.get(tabId)?.controller.abort();
+      await removeActivatedTab(tabId);
+      return refuse(tabId, 'Blocked here',
+        'This site is on your blocklist, so nothing was read or sent. '
+        + 'Remove it in the extension settings to analyse it.');
+    }
+
     const requestId = ++nextRequestId;
 
     // Supersede whatever this tab was already waiting on.
@@ -316,17 +435,23 @@ export default defineBackground(() => {
       const entities = parseEntitiesResponse(response.text);
       logResponse(model, durationMs, response.usage, entities.length);
 
-      await timingStats.setValue(
-        recordSample(stats, model, request.text.length, response.usage.output, durationMs)
-      );
+      await serializeStats(async () => {
+        // Re-read inside the critical section. `stats` above was fetched
+        // before the provider call — seconds ago, and another tab may have
+        // recorded a sample since.
+        const latestStats = await timingStats.getValue();
+        await timingStats.setValue(
+          recordSample(latestStats, model, request.text.length, response.usage.output, durationMs)
+        );
 
-      // Running total across every page, so the popup can show what the
-      // user's own key has actually been spent on.
-      const totals = await tokenUsage.getValue();
-      await tokenUsage.setValue({
-        input: totals.input + response.usage.input,
-        output: totals.output + response.usage.output,
-        calls: totals.calls + 1,
+        // Running total across every page, so the popup can show what the
+        // user's own key has actually been spent on.
+        const totals = await tokenUsage.getValue();
+        await tokenUsage.setValue({
+          input: totals.input + response.usage.input,
+          output: totals.output + response.usage.output,
+          calls: totals.calls + 1,
+        });
       });
 
       if (sender.tab?.id) {
@@ -391,6 +516,11 @@ export default defineBackground(() => {
           console.log('Could not send error message to content script:', msgError);
         }
       }
+    } finally {
+      // Only if it is still ours: a newer request for this tab has already
+      // replaced the entry, and dropping that one would strand its controller.
+      // Without this, every tab ever analysed left an AbortController behind.
+      if (inFlight.get(tabId)?.id === requestId) inFlight.delete(tabId);
     }
   });
 });

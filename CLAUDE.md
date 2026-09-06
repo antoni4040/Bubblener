@@ -19,7 +19,7 @@ npm run dev              # Chrome dev build + auto-reload
 npm run dev:firefox
 
 npm run compile          # tsc --noEmit — run this before declaring anything done
-npm test                 # Vitest unit suite (222 tests / 23 files, ~40s)
+npm test                 # Vitest unit suite (241 tests / 24 files, ~50s)
 npm run test:watch
 npm run test:coverage    # v8 coverage; components + utils, entrypoints excluded
 
@@ -107,13 +107,43 @@ calls it, and sends back `{ entities }` or `{ error }`.
 | `components/BubblesContainer.tsx` | Settings load, scroll re-extraction, theme → CSS variables |
 | `utils/constants/themes.ts` | Every visual decision, per theme |
 
+### Every accepted request gets exactly one terminal outcome
+
+`onMessage` must never return silently once the page is showing a spinner. Each
+refusal goes through the local `refuse()` helper — no usable text, not active
+here, blocked here, no API key — because a bare `return` left the spinner
+running for ever, which reads as a hang rather than as a reason. On a fresh
+install with no key that was the very first thing a user hit.
+
+`BubblesContainer` also arms a 120s watchdog per request, cleared wherever
+loading ends. That covers the one case no message can: an MV3 service worker
+terminated mid-request, which answers nothing at all.
+
 ### Activation is opt-in, per tab
 
 Bubblener does nothing until the user activates it, from the on-page launcher or the popup's
 "Analyse this page" (the toolbar icon opens the settings popup instead). There is deliberately no
-context-menu entry any more, and no `contextMenus` permission. `activateContentScript` injects the content script and records the tab
-in `activatedTabs`; **`onMessage` ignores messages from any tab not in that set**, so an arbitrary
-page can't trigger a paid API call. Keep that check if you touch the message handler.
+context-menu entry any more, and no `contextMenus` permission.
+
+**Activated tabs live in `session:` storage, not in a `Set`.** Chrome routinely terminates an idle
+MV3 service worker; in-memory state dies with it while the injected content script keeps running
+and keeps sending, so the tab looked deactivated for no visible reason. Session storage outlives
+the worker, is cleared when the browser closes — the lifetime we want — and never touches disk.
+**Don't move this back into memory.**
+
+`forgetTab` (tab closed, or navigated) aborts the in-flight controller and deletes the `inFlight`
+entry as well as clearing activation. Dropping activation alone let a provider request run on
+after the reader had gone, and — because the tab id survives navigation — let a late answer from
+the previous page reach the next one.
+
+`activateContentScript` injects the content script and records the tab; **`onMessage` ignores text
+from any tab that is not recorded** (`isActivated`), so an arbitrary page can't trigger a paid API
+call. Keep that check if you touch the message handler — it now answers rather than returning
+silently, because an activation lost to a restarted worker lands there too.
+
+Storage read-modify-writes go through `utils/serialize.ts`. Several tabs share one worker, and
+token totals and timing samples are read-modify-write against storage: without it the later of two
+concurrent analyses simply erased the earlier one's numbers.
 
 ### The blocklist is enforced in the background, twice
 
@@ -134,13 +164,17 @@ synonym. The blocklist is saved on click rather than staged behind **Save**, and
 MV2 and MV3 script injection are both handled (`browser.scripting` / `browser.tabs.executeScript`)
 because Firefox and Chrome don't agree.
 
-### Storage: one item per setting, all `local:`
+### Storage: one item per setting, `local:` for everything the user owns
 
 `apiKey`, `modelAPI`, `modelTier`, `ollamaModel`, `theme`, `bubbleColors`, `bubblePosition`,
 `bubbleDistance`, `bubbleSize`, `bubbleTransparency`, `textHighlighting`, `pixelDistance`,
 `maxNumberOfElements`, `maxNumberOfCharacters`, `tokenUsage`, `timingStats`, `starredEntities`,
 `hiddenEntities`, `blockedSites` — each a `storage.defineItem` module under `utils/storage/`. `local:`, never
 `sync:`, so the key is never uploaded to a browser account.
+
+The one exception is `session:activatedTabs` in `background.ts`, which is runtime state rather than
+a setting: it must outlive a terminated service worker but not the browser session, and it must not
+be written to disk. See *Activation is opt-in, per tab* above.
 
 `BubblesContainer` re-reads settings on `storage.onChanged`, so the popup's Save updates live pages
 without a reload. **Add new settings to that listener's key check or they won't apply until reload.**
@@ -194,6 +228,9 @@ Each of these cost real debugging time here.
   `COLLAPSED` / `EXPANDED` / `TALL` constants — change those and the coordinates in that test
   have to move with them. It is rounded in **every** theme, Cyberpunk included: it sits on top of
   someone else's page, and the soft edge is what keeps it reading as ours.
+- **`npx playwright test` skips the build.** Only `npm run test:e2e` runs `pretest:e2e`, so calling
+  Playwright directly tests whatever is already in `.output/`. A new background feature will look
+  broken when the bundle simply predates it — this has already cost one wrong diagnosis.
 - **Playwright can't reach the launcher by selector** (closed shadow root), so tests call
   `__bubblenerTestActivate`, exposed on the service worker's global scope in `background.ts`. Keep
   that export if you refactor activation.

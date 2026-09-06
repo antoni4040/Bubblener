@@ -32,6 +32,14 @@ import bubblePosition from '@/utils/storage/bubblePosition';
 import bubbleDistance from '@/utils/storage/bubbleDistance';
 import BubblePositionEnum from '@/utils/types/bubblePositionEnum';
 
+/**
+ * How long the page waits for any answer at all before giving up.
+ *
+ * Comfortably past the provider timeout in `promptUtils`, because a slow model
+ * is not a hang: this only has to catch a background that stopped answering.
+ */
+const WATCHDOG_MS = 120_000;
+
 const BubblesContainer = () => {
     const [entities, setEntities] = useState<RankedEntity[]>([]);
     // Increments per request, so entities from the section being read can
@@ -50,7 +58,9 @@ const BubblesContainer = () => {
     const hiddenRef = useRef<SavedEntities>({});
     const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [error, setError] = useState(null);
+    // Matches ErrorToast; previously inferred as `null`, which type-checked
+    // only because every value assigned to it came through an `any`.
+    const [error, setError] = useState<{ title: string; message: string } | null>(null);
     const [scrollThreshold, setScrollThreshold] = useState(defaults.scrollThreshold);
     const [isLoading, setLoading] = useState(false);
     const [showBubbles, setShowBubbles] = useState(true);
@@ -77,7 +87,14 @@ const BubblesContainer = () => {
     // The id of the analysis whose answers we still want. Anything older has
     // been superseded by scrolling and must be ignored even if it arrives.
     const currentRequestRef = useRef<number | null>(null);
+    const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const { setColorScheme } = useMantineColorScheme();
+
+    /** Called wherever loading ends, so the net never fires after the fact. */
+    const stopWatchdog = () => {
+        if (watchdogRef.current) clearTimeout(watchdogRef.current);
+        watchdogRef.current = null;
+    };
 
     // Send text to background script for processing
     const processText = (text: string, force = false) => {
@@ -105,13 +122,36 @@ const BubblesContainer = () => {
         setRequestStartedAt(Date.now());
         setEstimateMs(null);
         setElapsedMs(0);
+        // A last resort, not the normal path: the background answers every
+        // accepted request with entities or with a reason. But a Manifest V3
+        // service worker can be terminated mid-request, and then nothing
+        // answers at all — leaving a spinner that reads as a hang.
+        if (watchdogRef.current) clearTimeout(watchdogRef.current);
+        watchdogRef.current = setTimeout(() => {
+            setLoading(false);
+            setRequestStartedAt(null);
+            setError({
+                title: 'No answer',
+                message: 'The extension stopped responding. Try again, or reload the page.',
+            });
+        }, WATCHDOG_MS);
+
         browser.runtime.sendMessage({ text })
-            .then(response => {
-                if (response && response.status === "processing") {
-                    console.log("Message sent to background script for processing.");
-                }
-            })
-            .catch(error => console.error("Error sending message to background script:", error));
+            .catch(error => {
+                // The message never reached the background — the extension was
+                // reloaded or updated and this content script is orphaned.
+                // That is already terminal, so there is nothing to wait for;
+                // letting the watchdog report it two minutes later would be
+                // pure delay.
+                console.error('Error sending message to background script:', error);
+                stopWatchdog();
+                setLoading(false);
+                setRequestStartedAt(null);
+                setError({
+                    title: 'Extension unavailable',
+                    message: 'Could not reach Bubblener. Reload the page and try again.',
+                });
+            });
     };
 
     useEffect(() => {
@@ -200,6 +240,7 @@ const BubblesContainer = () => {
                 if (!request.streaming) {
                     setLoading(false);
                     setRequestStartedAt(null);
+                    stopWatchdog();
                 }
             }
             if (request.usage) {
@@ -213,6 +254,7 @@ const BubblesContainer = () => {
                 // Without this the spinner outlives every failed request.
                 setLoading(false);
                 setRequestStartedAt(null);
+                stopWatchdog();
                 setTimeout(() => setError(null), 10000);
             }
         };
@@ -220,7 +262,7 @@ const BubblesContainer = () => {
         browser.runtime.onMessage.addListener(messageListener);
 
         // Storage change listener to reload settings when they change
-        const handleStorageChange = (changes: any) => {
+        const handleStorageChange = async (changes: any) => {
             if (changes.pixelDistance || changes.bubbleColors ||
                 changes.maxNumberOfCharacters || changes.bubblePosition
                 || changes.bubbleDistance || changes.theme || changes.bubbleSize
@@ -228,12 +270,29 @@ const BubblesContainer = () => {
                 || changes.hiddenEntities
                 || changes.bubbleTransparency || changes.textHighlighting) {
                 console.log('Settings changed, reloading...');
-                loadSettings();
+                // Awaited: the refs below are populated by this, and firing
+                // dependent work first meant a lowered character limit was
+                // read at its old value — the setting ignored exactly when
+                // the user had just changed it.
+                await loadSettings();
 
-                // If max characters changed, re-process current text
+                // Applied to what is already on screen, not only to the next
+                // answer. Lowering the limit, or hiding an entity from the
+                // Library or another tab, used to leave the old bubbles up
+                // until a model response happened to arrive.
+                setEntities(previous => mergeEntities(
+                    previous, [], maxElementsRef.current, batchRef.current,
+                    {
+                        pinned: new Set(Object.keys(starredRef.current)),
+                        hidden: new Set(Object.keys(hiddenRef.current)),
+                    },
+                ));
+
+                // Forced: the visible text has not changed, so the usual
+                // de-duplication would drop the very request the new limit
+                // was meant to produce.
                 if (changes.maxNumberOfCharacters) {
-                    const newText = getVisibleTextOnScreen();
-                    processText(newText);
+                    processText(getVisibleTextOnScreen(), true);
                 }
             }
         };
@@ -242,6 +301,7 @@ const BubblesContainer = () => {
 
         // Cleanup
         return () => {
+            stopWatchdog();
             browser.runtime.onMessage.removeListener(messageListener);
             browser.storage.onChanged.removeListener(handleStorageChange);
         };

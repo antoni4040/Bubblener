@@ -1,8 +1,8 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { renderWithMantine } from '@/test/renderWithMantine';
-import { emitMessage, emitStorageChange, sentMessages } from '@/test/mockBrowser';
+import { emitMessage, emitStorageChange, sendMessageMock, sentMessages } from '@/test/mockBrowser';
 import { setStored } from '@/test/mockWxtStorage';
 import BubblesContainer from '@/components/BubblesContainer';
 import type Entity from '@/utils/types/Entity';
@@ -200,6 +200,70 @@ describe('BubblesContainer: progress while re-analysing', () => {
 });
 
 describe('BubblesContainer: failures', () => {
+    it('stops the spinner and explains a refusal, not just a provider error', async () => {
+        // Refusals — no key, blocked site, activation lost — used to return
+        // silently, leaving a spinner that reads as a hang rather than a reason.
+        renderWithMantine(<BubblesContainer />);
+        expect(await screen.findByText('Processing entities...')).toBeInTheDocument();
+
+        emitMessage({
+            error: {
+                title: 'No API key',
+                message: 'Add your Gemini API key in the extension popup, or switch to Ollama.',
+            },
+        });
+
+        expect(await screen.findByText(/Add your Gemini API key/)).toBeInTheDocument();
+        await waitFor(() =>
+            expect(screen.queryByText('Processing entities...')).not.toBeInTheDocument());
+    });
+
+    it('reports a failed send at once instead of waiting for the watchdog', async () => {
+        // An orphaned content script — the extension was reloaded — knows
+        // immediately. Sitting on that for the full watchdog is pure delay.
+        sendMessageMock.mockRejectedValueOnce(new Error('Extension context invalidated.'));
+        renderWithMantine(<BubblesContainer />);
+
+        expect(await screen.findByText(/Could not reach Bubblener/)).toBeInTheDocument();
+        await waitFor(() =>
+            expect(screen.queryByText('Processing entities...')).not.toBeInTheDocument());
+    });
+
+    it('gives up on its own if nothing answers at all', async () => {
+        // A Manifest V3 worker can be terminated mid-request, and then no
+        // message of any kind arrives.
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+        try {
+            renderWithMantine(<BubblesContainer />);
+            await waitFor(() => expect(sentMessages).toHaveLength(1));
+            expect(screen.getByText('Processing entities...')).toBeInTheDocument();
+
+            await act(async () => { vi.advanceTimersByTime(121_000); });
+
+            expect(await screen.findByText(/stopped responding/)).toBeInTheDocument();
+            expect(screen.queryByText('Processing entities...')).not.toBeInTheDocument();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('does not fire the watchdog once an answer has arrived', async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+        try {
+            renderWithMantine(<BubblesContainer />);
+            await waitFor(() => expect(sentMessages).toHaveLength(1));
+            deliver([entity('Raskolnikov')]);
+            await waitFor(() => expect(bubbleNames()).toEqual(['Raskolnikov']));
+
+            await act(async () => { vi.advanceTimersByTime(121_000); });
+
+            expect(screen.queryByText(/stopped responding/)).not.toBeInTheDocument();
+            expect(bubbleNames()).toEqual(['Raskolnikov']);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it('shows the error and stops the spinner', async () => {
         // A failed request used to leave the spinner running for ever, which
         // reads as a hang rather than as an error.
@@ -248,6 +312,54 @@ describe('BubblesContainer: settings', () => {
             const themed = document.querySelector('[style*="--bn-bubble-size"]') as HTMLElement;
             expect(themed.style.getPropertyValue('--bn-bubble-size')).toBe('20px');
         });
+    });
+
+    it('applies a lowered limit to bubbles already on screen', async () => {
+        setStored('maxNumberOfElements', 5);
+        renderWithMantine(<BubblesContainer />);
+        await waitFor(() => expect(sentMessages).toHaveLength(1));
+        deliver([
+            entity('A', { importance: 0.9 }),
+            entity('B', { importance: 0.8 }),
+            entity('C', { importance: 0.7 }),
+        ]);
+        await waitFor(() => expect(bubbleNames()).toEqual(['A', 'B', 'C']));
+
+        // Used to wait for the next model response before taking effect.
+        setStored('maxNumberOfElements', 2);
+        emitStorageChange({ maxNumberOfElements: { newValue: 2 } });
+
+        await waitFor(() => expect(bubbleNames()).toEqual(['A', 'B']));
+    });
+
+    it('removes an entity hidden from somewhere else, without waiting', async () => {
+        renderWithMantine(<BubblesContainer />);
+        await waitFor(() => expect(sentMessages).toHaveLength(1));
+        deliver([entity('Raskolnikov'), entity('Razumihin')]);
+        await waitFor(() => expect(bubbleNames()).toEqual(['Raskolnikov', 'Razumihin']));
+
+        // As the Library page, or an import, would do it.
+        setStored('hiddenEntities', { razumihin: { ...entity('Razumihin'), savedAt: 1 } });
+        emitStorageChange({ hiddenEntities: { newValue: {} } });
+
+        await waitFor(() => expect(bubbleNames()).toEqual(['Raskolnikov']));
+    });
+
+    it('re-sends the same text when the character limit changes', async () => {
+        // The text is identical, so de-duplication would normally skip it —
+        // dropping the one request the new limit was meant to produce.
+        document.body.innerHTML = `<article><p>${'x'.repeat(500)}</p></article>`;
+        setStored('maxNumberOfCharacters', 400);
+        renderWithMantine(<BubblesContainer />);
+        await waitFor(() => expect(sentMessages).toHaveLength(1));
+        expect(sentMessages[0].text).toHaveLength(400);
+
+        setStored('maxNumberOfCharacters', 100);
+        emitStorageChange({ maxNumberOfCharacters: { newValue: 100 } });
+
+        await waitFor(() => expect(sentMessages).toHaveLength(2));
+        // And at the new limit, not the one it was holding when the change came in.
+        expect(sentMessages[1].text).toHaveLength(100);
     });
 
     it('hides the bubbles on demand and brings them back', async () => {

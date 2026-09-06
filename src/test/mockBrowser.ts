@@ -15,7 +15,8 @@ const storageListeners = new Set<Listener>();
 /** Everything the component has sent to the background. */
 export const sentMessages: any[] = [];
 
-export const sendMessageMock = vi.fn(async (message: any) => {
+// Typed as `any`: tests stub replies such as `{ activated: false }`.
+export const sendMessageMock = vi.fn(async (message: any): Promise<any> => {
     sentMessages.push(message);
     return undefined;
 });

@@ -10,9 +10,11 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
-    // The popup tests drive Mantine through userEvent, which is slow enough to
-    // pass the 5s default on a loaded machine and read as a flake.
-    testTimeout: 20_000,
+    // The popup tests drive Mantine through userEvent and take ~27s for the
+    // file even on an idle machine. Running alongside the rest of the suite
+    // they were passing 20s and failing as timeouts rather than on their
+    // assertions — a flake, not a defect. CI runners are slower again.
+    testTimeout: 45_000,
     // Live provider tests cost money and need real keys: they run only via
     // `npm run test:live`, never as part of the default suite.
     // `.claude/worktrees/**` holds throwaway git worktrees of this same repo.

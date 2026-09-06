@@ -1,11 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { renderWithMantine } from '@/test/renderWithMantine';
 import App from './App';
 import apiKey from '@/utils/storage/apiKey';
 import blockedSites from '@/utils/storage/blockedSites';
-import { setActiveTab } from '@/test/mockBrowser';
+import { sendMessageMock, setActiveTab } from '@/test/mockBrowser';
+import modelAPI from '@/utils/storage/modelAPI';
+import ollamaModel from '@/utils/storage/ollamaModel';
+import showLauncher from '@/utils/storage/showLauncher';
+import modelAPIsEnum from '@/utils/types/modelAPIsEnum';
+import defaults from '@/utils/constants/defaults';
+import pixelDistance from '@/utils/storage/pixelDistance';
+import bubbleSize from '@/utils/storage/bubbleSize';
 
 const SECRET_KEY = 'sk-super-secret-value';
 
@@ -46,7 +53,10 @@ describe('App API key field', () => {
 
         await userEvent.click(await screen.findByRole('button', { name: 'Change Key' }));
         const editableField = await screen.findByPlaceholderText(/Enter your API Key/);
-        await userEvent.type(editableField, 'sk-new-key');
+        // `delay: null` skips user-event's pause between keystrokes. Each one
+        // re-renders the whole popup, so the default turned ten characters
+        // into seconds — enough to time out under a loaded machine.
+        await userEvent.setup({ delay: null }).type(editableField, 'sk-new-key');
         await userEvent.click(screen.getByRole('button', { name: /Save Settings/i }));
 
         await waitFor(async () => expect(await apiKey.getValue()).toBe('sk-new-key'));
@@ -70,6 +80,69 @@ describe('App API key field', () => {
 
         await userEvent.click(await screen.findByRole('button', { name: 'Change Key' }));
         expect(await apiKey.getValue()).toBe(SECRET_KEY);
+    });
+});
+
+describe('App reset and activation', () => {
+    it('resets the provider, local model and launcher too', async () => {
+        await modelAPI.setValue(modelAPIsEnum.DeepSeek);
+        await ollamaModel.setValue('llama3.2');
+        await showLauncher.setValue(false);
+        renderWithMantine(<App />);
+
+        await userEvent.click(await screen.findByRole('button', { name: /Reset All/i }));
+        await waitFor(() => expect(screen.getByText(/reset to defaults/i)).toBeInTheDocument());
+
+        // "Reset All" used to leave these three behind, despite the label.
+        expect(await modelAPI.getValue()).toBe(defaults.modelAPI);
+        expect(await ollamaModel.getValue()).toBe(defaults.ollamaModel);
+        expect(await showLauncher.getValue()).toBe(defaults.showLauncher);
+    });
+
+    it('does not claim unsaved changes straight after a reset', async () => {
+        renderWithMantine(<App />);
+        await userEvent.click(await screen.findByRole('button', { name: /Reset All/i }));
+        await waitFor(() => expect(screen.getByText(/reset to defaults/i)).toBeInTheDocument());
+
+        // The reset values were written to storage, so there is nothing pending.
+        expect(screen.getByRole('button', { name: 'Save Settings' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Save Settings \*/ })).not.toBeInTheDocument();
+    });
+
+    it('does not claim unsaved changes when the reset writes are slow', async () => {
+        // Real extension storage is a round trip, and React renders the reset
+        // values long before it finishes. Arming the re-baseline only *after*
+        // the writes meant the dirty-state effect ran first, latched
+        // "Unsaved changes", and never re-ran to clear it. Mock storage
+        // resolves instantly, so the race only shows with a delayed write.
+        await pixelDistance.setValue(5000);
+        await bubbleSize.setValue(20);
+        const slowWrite = vi.spyOn(pixelDistance, 'setValue').mockImplementation(
+            async () => { await new Promise((resolve) => setTimeout(resolve, 80)); });
+
+        try {
+            renderWithMantine(<App />);
+            await screen.findByRole('button', { name: /Reset All/i });
+            await userEvent.click(screen.getByRole('button', { name: /Reset All/i }));
+
+            await waitFor(() =>
+                expect(screen.getByText(/reset to defaults/i)).toBeInTheDocument());
+            expect(screen.queryByRole('button', { name: /Save Settings \*/ }))
+                .not.toBeInTheDocument();
+        } finally {
+            slowWrite.mockRestore();
+        }
+    });
+
+    it('says so when activation is refused, and stays open', async () => {
+        await apiKey.setValue(SECRET_KEY);   // the button only shows with a key
+        setActiveTab({ id: 1, url: 'https://blocked.example.com/' });
+        sendMessageMock.mockResolvedValueOnce({ activated: false });
+        renderWithMantine(<App />);
+
+        await userEvent.click(await screen.findByRole('button', { name: /Analyse this page/i }));
+
+        expect(await screen.findByText(/Could not start on this page/)).toBeInTheDocument();
     });
 });
 
@@ -130,7 +203,8 @@ describe('App blocked sites', () => {
     it('accepts a pasted URL and stores just the hostname', async () => {
         renderWithMantine(<App />);
 
-        await userEvent.type(await openPrivacy(), 'https://mail.example.com/inbox');
+        await userEvent.setup({ delay: null })
+            .type(await openPrivacy(), 'https://mail.example.com/inbox');
         await userEvent.click(screen.getByRole('button', { name: 'Block' }));
 
         await waitFor(async () =>
