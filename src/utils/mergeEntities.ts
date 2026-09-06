@@ -68,16 +68,21 @@ export const mergeEntities = (
 
     const all = Array.from(byKey.values());
     const isPinned = (entity: RankedEntity) => pinned?.has(key(entity)) ?? false;
+    if (max <= 0) return all;
 
-    // Starred entities hold their place unconditionally — the user asked for
-    // them — so the cap governs only the rest.
+    // Starred entities take their slots first and are never evicted, but they
+    // are counted: "Max Number of Elements" has to mean the number of bubbles
+    // on screen, or the setting is simply wrong. The only case that can still
+    // exceed it is starring more entities than the limit itself, where
+    // dropping something the user explicitly pinned would be the worse answer.
     const unpinned = all.filter((entity) => !isPinned(entity));
-    if (max <= 0 || unpinned.length <= max) return all;
+    const slots = Math.max(0, max - (all.length - unpinned.length));
+    if (unpinned.length <= slots) return all;
 
     const survivors = new Set(
         unpinned.slice()
             .sort((a, b) => score(b, batch) - score(a, batch))
-            .slice(0, max)
+            .slice(0, slots)
     );
     return all.filter((entity) => isPinned(entity) || survivors.has(entity));
 };

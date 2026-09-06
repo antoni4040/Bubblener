@@ -53,12 +53,13 @@ export default defineBackground(() => {
   const isBlocked = async (url: string | undefined) =>
     isSiteBlocked(url, await blockedSites.getValue());
 
-  // Function to activate content script
-  const activateContentScript = async (tab: any) => {
+  /** Reports whether the content script is actually running, so callers
+   *  (the on-page launcher) can stop showing progress when it is not. */
+  const activateContentScript = async (tab: any): Promise<boolean> => {
     // Validate tab exists and has valid ID
     if (!tab || !tab.id || tab.id === -1) {
       console.log('Invalid tab - cannot activate content script');
-      return;
+      return false;
     }
 
     // Check if URL is supported
@@ -82,7 +83,7 @@ export default defineBackground(() => {
           title: 'Bubblener Not Supported',
           message: 'Bubblener cannot be activated on this type of page.',
         });
-        return;
+        return false;
       }
     }
 
@@ -98,7 +99,7 @@ export default defineBackground(() => {
         title: 'Bubblener Blocked Here',
         message: 'This site is on your blocklist. Remove it in the settings to analyse it.',
       });
-      return;
+      return false;
     }
 
     try {
@@ -130,6 +131,7 @@ export default defineBackground(() => {
         title: 'Bubblener Activated',
         message: 'Entity detection is now active on this page.',
       });
+      return true;
     } catch (error) {
       console.error('Error activating content script:', error);
 
@@ -140,6 +142,9 @@ export default defineBackground(() => {
         title: 'Activation Failed',
         message: 'Could not activate Bubblener on this page.',
       });
+      // Injection failed, so the tab is not really active after all.
+      activatedTabs.delete(tab.id);
+      return false;
     }
   };
 
@@ -165,22 +170,6 @@ export default defineBackground(() => {
   } else {
     console.error('Neither browser.action nor browser.browserAction is available.');
   }
-
-  // Handle context menu click
-  browser.contextMenus.onClicked.addListener(async (info, tab) => {
-    if (info.menuItemId === 'activateBubblener' && tab) {
-      await activateContentScript(tab);
-    }
-  });
-
-  // Create context menu on install
-  browser.runtime.onInstalled.addListener(() => {
-    browser.contextMenus.create({
-      id: "activateBubblener",
-      title: "Activate Bubblener",
-      contexts: ["page"]
-    });
-  });
 
   // Clean up when tab is closed
   browser.tabs.onRemoved.addListener((tabId) => {
@@ -209,8 +198,10 @@ export default defineBackground(() => {
         : request.tabId
           ? await browser.tabs.get(request.tabId).catch(() => undefined)
           : undefined;
-      if (target) await activateContentScript(target);
-      return { activated: !!target };
+      // Reports what actually happened, so the launcher can drop its spinner
+      // immediately on refusal instead of waiting out its safety timeout.
+      const activated = target ? await activateContentScript(target) : false;
+      return { activated };
     }
 
     // Check if message has text and sender is from an activated tab

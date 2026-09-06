@@ -1,4 +1,3 @@
-import BubblesIcon from '@/assets/icon.svg';
 import defaults from '@/utils/constants/defaults';
 import themes from '@/utils/constants/themes';
 import getVisibleTextOnScreen, { getContentRoot } from '@/utils/domUtils';
@@ -438,6 +437,7 @@ const BubblesContainer = () => {
                     focused={focused}
                     getBubbleRect={getBubbleRect}
                     onMentionFocus={setMentionFocus}
+                    bubblesOnLeft={isLeftAligned}
                 />
             )}
 
@@ -483,10 +483,16 @@ const BubblesContainer = () => {
                         </span>
                     )}
 
+                    {/* The full indicator below only appears before the first
+                        entities arrive. Every later analysis — every scroll —
+                        happened in complete silence, so the extension looked
+                        idle exactly when it was spending tokens. */}
                     <ActionIcon
                         variant="default"
                         size="sm"
-                        aria-label="Reload bubbles"
+                        loading={isLoading}
+                        aria-label={isLoading ? 'Analysing' : 'Reload bubbles'}
+                        title={isLoading ? 'Analysing this section…' : 'Reload bubbles'}
                         style={{ ...controlStyle, marginRight: '6px' }}
                         onClick={() => onReload()}
                     >
@@ -508,9 +514,9 @@ const BubblesContainer = () => {
             {!showBubbles && (
                 <ParentBubble
                     setShowBubbles={setShowBubbles}
-                    BubblesIcon={BubblesIcon}
                     bubblePosition={getBubblePosition}
                     bubbleDistance={bubbleDistanceValue}
+                    colors={entityColors}
                 />
             )}
 

@@ -470,7 +470,7 @@ function App({ onThemeChange }: AppProps = {}) {
           <Text size="xs" ta="center" style={{ color: 'var(--mantine-color-dimmed)' }}>
             {analyseState === 'unsupported'
               ? 'This kind of page cannot be analysed — try an ordinary web page.'
-              : 'Also available by right-clicking a page, or from the button on the page itself.'}
+              : 'Also available from the launch button on the page itself.'}
           </Text>
         </Stack>
       )}

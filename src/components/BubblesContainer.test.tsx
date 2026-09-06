@@ -130,16 +130,72 @@ describe('BubblesContainer: receiving entities', () => {
         await waitFor(() => expect(bubbleNames()).toEqual(['Raskolnikov']));
     });
 
-    it('keeps a starred entity even past the limit', async () => {
+    it('gives the limited slots to starred entities first', async () => {
         setStored('maxNumberOfElements', 1);
         setStored('starredEntities', { pinned: { ...entity('Pinned'), savedAt: 1 } });
         renderWithMantine(<BubblesContainer />);
         await waitFor(() => expect(sentMessages).toHaveLength(1));
 
         deliver([entity('Pinned', { importance: 0.01 }), entity('Strong', { importance: 0.99 })]);
-        await waitFor(() => expect(bubbleNames()).toEqual(['Pinned', 'Strong']));
+
+        // One slot, and the starred entity takes it despite the lower score.
+        await waitFor(() => expect(bubbleNames()).toEqual(['Pinned']));
         // And it is visibly marked as pinned.
         expect(starredNames()).toEqual(['Pinned']);
+    });
+
+    it('shows no more bubbles than the configured limit', async () => {
+        // A setting of N used to show N+1 once anything was starred.
+        setStored('maxNumberOfElements', 3);
+        setStored('starredEntities', { pinned: { ...entity('Pinned'), savedAt: 1 } });
+        renderWithMantine(<BubblesContainer />);
+        await waitFor(() => expect(sentMessages).toHaveLength(1));
+
+        deliver([
+            entity('Pinned', { importance: 0.2 }),
+            entity('A', { importance: 0.9 }),
+            entity('B', { importance: 0.8 }),
+            entity('C', { importance: 0.7 }),
+            entity('D', { importance: 0.6 }),
+        ]);
+
+        await waitFor(() => expect(bubbleNames()).toHaveLength(3));
+        expect(bubbleNames()).toEqual(['Pinned', 'A', 'B']);
+    });
+});
+
+describe('BubblesContainer: progress while re-analysing', () => {
+    it('shows a spinner for an analysis that starts with bubbles already up', async () => {
+        // The big indicator only shows before the first entities arrive, so
+        // every scroll-triggered analysis after that ran in silence.
+        renderWithMantine(<BubblesContainer />);
+        await waitFor(() => expect(sentMessages).toHaveLength(1));
+        deliver([entity('Raskolnikov')], 1);
+        await waitFor(() => expect(bubbleNames()).toEqual(['Raskolnikov']));
+
+        const reload = screen.getByRole('button', { name: 'Reload bubbles' });
+        expect(reload).not.toHaveAttribute('data-loading', 'true');
+
+        await userEvent.click(reload);
+
+        const busy = await screen.findByRole('button', { name: 'Analysing' });
+        expect(busy).toHaveAttribute('data-loading', 'true');
+    });
+
+    it('stops spinning once the answer lands', async () => {
+        renderWithMantine(<BubblesContainer />);
+        await waitFor(() => expect(sentMessages).toHaveLength(1));
+        deliver([entity('Raskolnikov')], 1);
+        await waitFor(() => expect(bubbleNames()).toEqual(['Raskolnikov']));
+
+        await userEvent.click(screen.getByRole('button', { name: 'Reload bubbles' }));
+        await screen.findByRole('button', { name: 'Analysing' });
+
+        deliver([entity('Razumihin')], 2);
+
+        await waitFor(() =>
+            expect(screen.getByRole('button', { name: 'Reload bubbles' }))
+                .not.toHaveAttribute('data-loading', 'true'));
     });
 });
 

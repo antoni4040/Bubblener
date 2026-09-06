@@ -13,6 +13,10 @@ interface HighlightOverlayProps {
     getBubbleRect: (entityIndex: number) => DOMRect | null;
     /** Fires when the pointer enters/leaves a mention in the page text. */
     onMentionFocus: (entityIndex: number | null) => void;
+    /** Which edge the bubbles are pinned to. Connectors have to leave the text
+     *  and meet the bubble on the side that faces it, or they cut back across
+     *  the prose they are supposed to be pointing out of. */
+    bubblesOnLeft: boolean;
 }
 
 interface Mark {
@@ -37,7 +41,7 @@ const connectorOpacity = (count: number): number =>
  * are a snapshot and must be recomputed whenever the page moves.
  */
 const HighlightOverlay = ({
-    entities, mentions, colors, focused, getBubbleRect, onMentionFocus,
+    entities, mentions, colors, focused, getBubbleRect, onMentionFocus, bubblesOnLeft,
 }: HighlightOverlayProps) => {
     const [marks, setMarks] = useState<Mark[]>([]);
     const [viewport, setViewport] = useState({ width: 0, height: 0 });
@@ -124,14 +128,19 @@ const HighlightOverlay = ({
     const focusedMarks = focused === null ? [] : marks.filter((m) => m.entityIndex === focused);
     const bubbleRect = focused === null ? null : getBubbleRect(focused);
 
-    // One anchor per mention, not per rect. Anchoring on the rightmost rect of
-    // a wrapped mention keeps the line out of the prose.
+    // One anchor per mention, not per rect. A wrapped mention anchors on the
+    // rect nearest the bubbles — rightmost when they sit on the right — so the
+    // line leaves from the outside of the text rather than crossing back over
+    // it. Reversed for left-hand bubbles, or it does exactly that.
     const anchorFor = (list: Mark[]) =>
         Array.from(
             list
                 .reduce((best, mark) => {
                     const current = best.get(mark.mentionIndex);
-                    if (!current || mark.rect.right > current.right) best.set(mark.mentionIndex, mark.rect);
+                    const closer = !current || (bubblesOnLeft
+                        ? mark.rect.left < current.left
+                        : mark.rect.right > current.right);
+                    if (closer) best.set(mark.mentionIndex, mark.rect);
                     return best;
                 }, new Map<number, DOMRect>())
                 .values()
@@ -216,9 +225,19 @@ const HighlightOverlay = ({
                 const ink = getEntityInk(entities[focused]!.entity_type, colors);
                 // Leave from the baseline, so the connector reads as the
                 // underline continuing outward rather than a strikethrough...
-                const from = { x: anchor.right + 2, y: anchor.bottom };
-                const to = { x: bubbleRect.left, y: bubbleRect.top + bubbleRect.height / 2 };
+                const from = {
+                    x: bubblesOnLeft ? anchor.left - 2 : anchor.right + 2,
+                    y: anchor.bottom,
+                };
+                // ...and meet the bubble on its inward-facing edge. Always
+                // using `left` sent left-hand connectors past the bubble and
+                // back over the text to reach its far side.
+                const to = {
+                    x: bubblesOnLeft ? bubbleRect.right : bubbleRect.left,
+                    y: bubbleRect.top + bubbleRect.height / 2,
+                };
                 // ...and stay flat until clear of the text column before rising.
+                // Signed, so the control points mirror for a leftward run.
                 const span = to.x - from.x;
                 return (
                     <path

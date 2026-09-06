@@ -26,12 +26,12 @@ Built with React + WXT + Mantine.
 -   **Low / High quality tiers**: pick a cheap fast model or a stronger one per provider. The popup always shows exactly which model ID that resolves to.
 -   **Token usage**: input/output counts on the page as you read, plus an all-time total in the popup.
 -   **Four themes**: Light, Dark, Library and Cyberpunk. They change shape and typography, not just color — Library is square-cornered small-caps Baskerville on parchment, Cyberpunk is a phosphor terminal.
--   **Three ways to start**: the small launcher button on the page, "Analyse this page" in the popup, or the right-click menu.
+-   **Two ways to start**: the launcher on the page, or "Analyse this page" in the popup. The launcher rests as a small rounded button tucked into the window edge, leans out with an *Analyse* label when you reach for it, and spins while it starts up.
 -   **Highly customizable**: bubble colors per entity type, position, distance, size, fade-when-idle, highlight toggle, entity limit, and how far you scroll before re-analysing.
 
 ## How It Works
 
-1.  Nothing happens until you start it — via the on-page launcher, the popup button, or the right-click menu. A content script is then injected into that tab.
+1.  Nothing happens until you start it — via the on-page launcher or the popup button. A content script is then injected into that tab.
 2.  The script reads the text **currently on screen**, within the page's main content container (`<article>`, `<main>`, and similar) so navigation and sidebars are left out.
 3.  That text goes to the background script — the only place that ever holds your API key.
 4.  The background script calls your chosen provider with a prompt that asks for entities **actually present in the passage**, the exact surface forms they appear under, and an importance score.
@@ -45,7 +45,7 @@ Scrolling repeats this for the new section. An analysis you've scrolled away fro
 -   **No backend.** Your text goes from your browser straight to the provider you chose. There is no server in between, and nothing is collected.
 -   **Your key stays local.** It is stored with `storage.local` (never `sync:`, so it is not uploaded to a browser account) and is only ever read by the background script. The settings UI can't display it back to you — once saved, it shows "Key saved" and a *Change Key* button. Note that `storage.local` is plaintext on disk: anything with access to your browser profile can read it. Browser extensions have no access to OS keychains.
 -   **Ollama sends nothing anywhere.** It runs on your own machine.
--   **The launcher runs on every page.** To offer the small start button, a tiny content script (~22KB, no page content read) loads on the pages you visit. It only draws a button and reads your settings — no text is extracted and nothing is sent until you click it. You can turn it off in the popup, and the extension will still be reachable from the popup and right-click menu.
+-   **The launcher runs on every page.** To offer the small start button, a tiny content script (~22KB, no page content read) loads on the pages you visit. It only draws a button and reads your settings — no text is extracted and nothing is sent until you click it. You can turn it off in the popup, and the extension is still reachable from the popup.
 -   **Page text is sent only when you ask.** Analysis is per-tab and opt-in; a page cannot trigger it on its own.
 -   **Blocked sites are never read.** Add a site under Privacy in the popup — or hit "Never on this site" — and Bubblener will not analyse it or show a launch button there. Blocking a domain covers its subdomains, and the refusal lives in the background script, so it holds even for a tab that was already active.
 

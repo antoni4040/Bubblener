@@ -89,17 +89,46 @@ describe('mergeEntities', () => {
         const result = mergeEntities(
             [make('Beloved', 0.01)], [make('Strong', 0.99)], 1, 0, { pinned },
         );
-        expect(names(result)).toEqual(['Beloved', 'Strong']);
+        // The single slot goes to the starred one, not to the better score.
+        expect(names(result)).toEqual(['Beloved']);
     });
 
-    it('does not let starred entities consume the limit for the rest', () => {
+    it('counts starred entities against the limit', () => {
+        // The limit has to mean the number of bubbles on screen. Exempting
+        // starred ones made a setting of 12 show 13.
         const pinned = new Set([entityKey('Pinned')]);
         const result = mergeEntities(
             [make('Pinned', 0.01)],
             [make('A', 0.9), make('B', 0.8)],
             2, 0, { pinned },
         );
-        expect(names(result)).toEqual(['Pinned', 'A', 'B']);
+        expect(names(result)).toEqual(['Pinned', 'A']);
+    });
+
+    it('never exceeds the limit, however many batches arrive', () => {
+        const pinned = new Set([entityKey('Pinned')]);
+        let result = mergeEntities([make('Pinned', 0.1)], [], 3, 0, { pinned });
+        for (let batch = 1; batch <= 5; batch++) {
+            result = mergeEntities(
+                result,
+                [make(`E${batch}a`, 0.9), make(`E${batch}b`, 0.7)],
+                3, batch, { pinned },
+            );
+            expect(result.length).toBeLessThanOrEqual(3);
+        }
+        // And the pinned one is still there at the end of it.
+        expect(names(result)).toContain('Pinned');
+    });
+
+    it('still shows every starred entity when they outnumber the limit', () => {
+        // Self-inflicted and rare; dropping something explicitly pinned would
+        // be the worse answer.
+        const pinned = new Set([entityKey('A'), entityKey('B'), entityKey('C')]);
+        const result = mergeEntities(
+            [make('A', 0.1), make('B', 0.1), make('C', 0.1)],
+            [make('New', 0.99)], 2, 0, { pinned },
+        );
+        expect(names(result)).toEqual(['A', 'B', 'C']);
     });
 
     it('drops a hidden entity on arrival', () => {

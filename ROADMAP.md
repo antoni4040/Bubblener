@@ -94,7 +94,9 @@ Two prerequisites:
 - **Draggable launcher.** Note it currently has no position of its own — it
   reads `bubblePosition`/`bubbleDistance` and shares corners with the bubbles,
   so this needs a new setting or it moves both. Snap-to-corner is a fraction of
-  the work of free positioning and most of the benefit.
+  the work of free positioning and most of the benefit. Now that the launcher
+  is an edge wedge, only the *side* and the vertical offset really matter,
+  which makes dragging it along one edge the natural gesture.
 - **Firefox has never actually been verified**, despite the README and
   `CLAUDE.md` describing it as supported. The build works; nobody has loaded it.
 - **Trim the prompt.** ~991 tokens, about 95% of a typical request's input.

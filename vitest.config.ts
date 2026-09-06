@@ -15,7 +15,12 @@ export default defineConfig({
     testTimeout: 20_000,
     // Live provider tests cost money and need real keys: they run only via
     // `npm run test:live`, never as part of the default suite.
-    exclude: ['**/node_modules/**', 'e2e/**', '**/*.live.test.ts'],
+    // `.claude/worktrees/**` holds throwaway git worktrees of this same repo.
+    // Without it the suite collects a second copy of every test, which then
+    // fails for the wrong reason: a worktree has no `node_modules` or `.wxt`.
+    exclude: [
+      '**/node_modules/**', 'e2e/**', '**/*.live.test.ts', '.claude/**',
+    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],

@@ -584,3 +584,46 @@ test('exports a real file from the Library page, without the API key', async ({
     expect(parsed.settings.theme).toBe('Cyberpunk');
     expect(parsed.settings.blockedSites).toEqual(['bank.example.com']);
 });
+
+test('the resting edge button is clickable, and starts an analysis', async ({ context, background }) => {
+    // The launcher lives in a *closed* shadow root, so it cannot be queried or
+    // clicked by selector — only by real mouse events at real coordinates.
+    // That makes this the only check that the button is actually where we think
+    // it is and hittable while it is still tucked into the edge.
+    await context.route(DEEPSEEK_URL, (route) => route.fulfill(streamEntities([TEST_ENTITY])));
+    await background.evaluate(() => chrome.storage.local.set({
+        apiKey: 'test-key', modelAPI: 'DeepSeek', showLauncher: true,
+    }));
+    await context.route(ARTICLE_URL, (route: any) =>
+        route.fulfill({ contentType: 'text/html', body: ARTICLE_HTML }));
+
+    const page = await context.newPage();
+    await page.goto(ARTICLE_URL);
+
+    // The host is in the light DOM even though its contents are not.
+    await expect(page.locator('bubblener-launcher')).toHaveCount(1);
+
+    // Top Right, 20px down by default: 38x40, resting against the edge.
+    const size = page.viewportSize()!;
+    await page.mouse.move(size.width - 4, 41);
+    await page.mouse.click(size.width - 4, 41);
+
+    await expect(page.getByText(TEST_ENTITY.entity_name, { exact: true })).toBeVisible();
+    // Having done its job, it gets out of the way.
+    await expect(page.locator('bubblener-launcher')).toHaveCount(0);
+});
+
+test('no launcher appears on a blocked site', async ({ context, background }) => {
+    await background.evaluate(() => chrome.storage.local.set({
+        apiKey: 'test-key', modelAPI: 'DeepSeek', showLauncher: true,
+        blockedSites: ['example.com'],
+    }));
+    await context.route(ARTICLE_URL, (route: any) =>
+        route.fulfill({ contentType: 'text/html', body: ARTICLE_HTML }));
+
+    const page = await context.newPage();
+    await page.goto(ARTICLE_URL);
+    await page.waitForTimeout(1200);
+
+    await expect(page.locator('bubblener-launcher')).toHaveCount(0);
+});

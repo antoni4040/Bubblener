@@ -19,7 +19,7 @@ npm run dev              # Chrome dev build + auto-reload
 npm run dev:firefox
 
 npm run compile          # tsc --noEmit — run this before declaring anything done
-npm test                 # Vitest unit suite (212 tests / 22 files, ~40s)
+npm test                 # Vitest unit suite (222 tests / 23 files, ~40s)
 npm run test:watch
 npm run test:coverage    # v8 coverage; components + utils, entrypoints excluded
 
@@ -109,8 +109,9 @@ calls it, and sends back `{ entities }` or `{ error }`.
 
 ### Activation is opt-in, per tab
 
-Bubblener does nothing until the user activates it via the right-click menu (the toolbar icon opens
-the settings popup instead). `activateContentScript` injects the content script and records the tab
+Bubblener does nothing until the user activates it, from the on-page launcher or the popup's
+"Analyse this page" (the toolbar icon opens the settings popup instead). There is deliberately no
+context-menu entry any more, and no `contextMenus` permission. `activateContentScript` injects the content script and records the tab
 in `activatedTabs`; **`onMessage` ignores messages from any tab not in that set**, so an arbitrary
 page can't trigger a paid API call. Keep that check if you touch the message handler.
 
@@ -186,7 +187,14 @@ Each of these cost real debugging time here.
 - **Playwright can't load an extension headless** — `fixtures.ts` uses
   `launchPersistentContext` with `headless: false`. CI must wrap it (`xvfb-run`, as
   `.github/workflows/ci.yml` does).
-- **Playwright can't click the native context menu**, which is the real activation path. Tests call
+- **The launcher is a closed shadow root, so it cannot be tested by selector.** Only its host
+  (`<bubblener-launcher>`) is in the light DOM; the wedge inside is unreachable to
+  `page.locator`. The e2e test therefore clicks it by real coordinates, which is also the only
+  thing that verifies it is actually hittable where the CSS puts it. Its geometry lives in the
+  `COLLAPSED` / `EXPANDED` / `TALL` constants — change those and the coordinates in that test
+  have to move with them. It is rounded in **every** theme, Cyberpunk included: it sits on top of
+  someone else's page, and the soft edge is what keeps it reading as ours.
+- **Playwright can't reach the launcher by selector** (closed shadow root), so tests call
   `__bubblenerTestActivate`, exposed on the service worker's global scope in `background.ts`. Keep
   that export if you refactor activation.
 - **Browsers normalize hex to `rgb()`** in the `style` attribute — e2e color assertions must expect

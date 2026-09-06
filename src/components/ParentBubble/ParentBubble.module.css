@@ -1,0 +1,66 @@
+/* The same edge-tucked shape as the on-page launcher, so hiding the bubbles
+   hands you back a button that looks like the one that started them. */
+.edgeButton {
+    position: fixed;
+    z-index: 1000;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: var(--bn-edge-gap);
+    padding: 0 var(--bn-edge-padding);
+    width: var(--bn-edge-collapsed);
+    height: var(--bn-edge-tall);
+    border: none;
+    cursor: pointer;
+    /* The label is wider than the resting button, so it is clipped rather
+       than allowed to spill across the page. */
+    overflow: hidden;
+    background: var(--bn-edge-ink);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, .28);
+    pointer-events: auto;
+    /* Width alone animates, so it leans out rather than inflating. */
+    transition: width .2s cubic-bezier(.2, .7, .3, 1);
+}
+
+.edgeButton:hover,
+.edgeButton:focus-visible {
+    width: var(--bn-edge-expanded);
+}
+
+.edgeButton:focus-visible {
+    /* Inset: an outer ring on a flush element is clipped by the viewport
+       edge and only half of it would ever be visible. */
+    outline: 2px solid var(--bn-surface-bg);
+    outline-offset: -4px;
+}
+
+.glyph {
+    width: var(--bn-edge-glyph);
+    height: var(--bn-edge-glyph);
+    display: block;
+    flex: none;
+}
+
+.label {
+    font-family: var(--bn-font-family);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: .01em;
+    color: var(--bn-surface-bg);
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity .12s ease;
+}
+
+.edgeButton:hover .label,
+.edgeButton:focus-visible .label {
+    opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    .edgeButton,
+    .label {
+        transition: none;
+    }
+}
